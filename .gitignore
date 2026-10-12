@@ -1,0 +1,5 @@
+sonda/sonda
+*.o
+__pycache__/
+referencia/*.pdf
+referencia/sonda_tfg/

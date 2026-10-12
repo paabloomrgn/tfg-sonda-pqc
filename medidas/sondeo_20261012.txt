@@ -1,0 +1,130 @@
+### www.google.com — 2026-10-12T18:32:41+02:00
+==============================================================================
+  www.google.com
+==============================================================================
+  A  PQC en supported_groups, key_share solo clasico
+     ClientHello = 194 B (1 segmento)
+     HelloRetryRequest: el servidor EXIGE X25519MLKEM768 (0x11EC)
+     -> SEGURO
+
+  B  cliente puramente clasico
+     ClientHello = 192 B (1 segmento)
+     ServerHello: grupo elegido x25519 (0x001D), key_exchange = 32 B  [longitud conforme a RFC 10024]
+     -> INSEGURO
+
+  C  PQC en supported_groups Y key_share postcuantico
+     ClientHello = 1414 B (1 segmento)
+     ServerHello: grupo elegido X25519MLKEM768 (0x11EC), key_exchange = 1120 B  [longitud conforme a RFC 10024]
+     -> SEGURO
+
+  Como leer esto:
+   · C elige PQC            -> servidor SEGURO, sin ambiguedad.
+   · A clasico pero C PQC   -> el servidor soporta PQC, pero evita el
+                               HelloRetryRequest. A NO permite concluir nada.
+   · A y C clasicos         -> rechaza PQC teniendolo disponible: INSEGURO.
+   · HelloRetryRequest      -> exige ese grupo: soporte confirmado.
+
+### www.uam.es — 2026-10-12T18:32:42+02:00
+==============================================================================
+  www.uam.es
+==============================================================================
+  A  PQC en supported_groups, key_share solo clasico
+     ClientHello = 190 B (1 segmento)
+     ServerHello: grupo elegido x25519 (0x001D), key_exchange = 32 B  [longitud conforme a RFC 10024]
+     -> INSEGURO
+
+  B  cliente puramente clasico
+     ClientHello = 188 B (1 segmento)
+     ServerHello: grupo elegido x25519 (0x001D), key_exchange = 32 B  [longitud conforme a RFC 10024]
+     -> INSEGURO
+
+  C  PQC en supported_groups Y key_share postcuantico
+     ClientHello = 1410 B (1 segmento)
+     ServerHello: grupo elegido x25519 (0x001D), key_exchange = 32 B  [longitud conforme a RFC 10024]
+     -> INSEGURO
+
+  Como leer esto:
+   · C elige PQC            -> servidor SEGURO, sin ambiguedad.
+   · A clasico pero C PQC   -> el servidor soporta PQC, pero evita el
+                               HelloRetryRequest. A NO permite concluir nada.
+   · A y C clasicos         -> rechaza PQC teniendolo disponible: INSEGURO.
+   · HelloRetryRequest      -> exige ese grupo: soporte confirmado.
+
+### www.caixabank.es — 2026-10-12T18:32:42+02:00
+==============================================================================
+  www.caixabank.es
+==============================================================================
+  A  PQC en supported_groups, key_share solo clasico
+     ClientHello = 196 B (1 segmento)
+     HelloRetryRequest: el servidor EXIGE X25519MLKEM768 (0x11EC)
+     -> SEGURO
+
+  B  cliente puramente clasico
+     ClientHello = 194 B (1 segmento)
+     ServerHello: grupo elegido x25519 (0x001D), key_exchange = 32 B  [longitud conforme a RFC 10024]
+     -> INSEGURO
+
+  C  PQC en supported_groups Y key_share postcuantico
+     ClientHello = 1416 B (1 segmento)
+     ServerHello: grupo elegido X25519MLKEM768 (0x11EC), key_exchange = 1120 B  [longitud conforme a RFC 10024]
+     -> SEGURO
+
+  Como leer esto:
+   · C elige PQC            -> servidor SEGURO, sin ambiguedad.
+   · A clasico pero C PQC   -> el servidor soporta PQC, pero evita el
+                               HelloRetryRequest. A NO permite concluir nada.
+   · A y C clasicos         -> rechaza PQC teniendolo disponible: INSEGURO.
+   · HelloRetryRequest      -> exige ese grupo: soporte confirmado.
+
+### www.wikipedia.org — 2026-10-12T18:32:42+02:00
+==============================================================================
+  www.wikipedia.org
+==============================================================================
+  A  PQC en supported_groups, key_share solo clasico
+     ClientHello = 197 B (1 segmento)
+     HelloRetryRequest: el servidor EXIGE X25519MLKEM768 (0x11EC)
+     -> SEGURO
+
+  B  cliente puramente clasico
+     ClientHello = 195 B (1 segmento)
+     ServerHello: grupo elegido x25519 (0x001D), key_exchange = 32 B  [longitud conforme a RFC 10024]
+     -> INSEGURO
+
+  C  PQC en supported_groups Y key_share postcuantico
+     ClientHello = 1417 B (1 segmento)
+     ServerHello: grupo elegido X25519MLKEM768 (0x11EC), key_exchange = 1120 B  [longitud conforme a RFC 10024]
+     -> SEGURO
+
+  Como leer esto:
+   · C elige PQC            -> servidor SEGURO, sin ambiguedad.
+   · A clasico pero C PQC   -> el servidor soporta PQC, pero evita el
+                               HelloRetryRequest. A NO permite concluir nada.
+   · A y C clasicos         -> rechaza PQC teniendolo disponible: INSEGURO.
+   · HelloRetryRequest      -> exige ese grupo: soporte confirmado.
+
+### www.bbva.es — 2026-10-12T18:32:42+02:00
+==============================================================================
+  www.bbva.es
+==============================================================================
+  A  PQC en supported_groups, key_share solo clasico
+     ClientHello = 191 B (1 segmento)
+     ServerHello: grupo elegido x25519 (0x001D), key_exchange = 32 B  [longitud conforme a RFC 10024]
+     -> INSEGURO
+
+  B  cliente puramente clasico
+     ClientHello = 189 B (1 segmento)
+     ServerHello: grupo elegido x25519 (0x001D), key_exchange = 32 B  [longitud conforme a RFC 10024]
+     -> INSEGURO
+
+  C  PQC en supported_groups Y key_share postcuantico
+     ClientHello = 1411 B (1 segmento)
+     ServerHello: grupo elegido X25519MLKEM768 (0x11EC), key_exchange = 1120 B  [longitud conforme a RFC 10024]
+     -> SEGURO
+
+  Como leer esto:
+   · C elige PQC            -> servidor SEGURO, sin ambiguedad.
+   · A clasico pero C PQC   -> el servidor soporta PQC, pero evita el
+                               HelloRetryRequest. A NO permite concluir nada.
+   · A y C clasicos         -> rechaza PQC teniendolo disponible: INSEGURO.
+   · HelloRetryRequest      -> exige ese grupo: soporte confirmado.
+
