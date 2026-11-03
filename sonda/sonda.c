@@ -191,7 +191,7 @@ static void analizar_paquete(u_char *user,
                est.total, s, d, p, ip_hl, ip_len, payload_len, ip->ttl);
     }
 
-    /* BLOQUE 2: aqui entrara la diseccion TCP, con
+    /* BLOQUE 2: aqui entrará la diseccion TCP, con
      *   const u_char *tcp = pkt + off + ip_hl;
      */
 }
