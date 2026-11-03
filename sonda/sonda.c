@@ -6,9 +6,10 @@
  * Tutor: Jorge E. Lopez de Vergara
  *
  * BLOQUE 1: captura y diseccion hasta la capa IP.
+ * BLOQUE 2: diseccion de la cabecera TCP y filtro por puerto.
  *
  * Compilar:  gcc -Wall -Wextra -std=gnu11 -o sonda sonda.c -lpcap
- * Ejecutar:  ./sonda -f traza.pcap
+ * Ejecutar:  ./sonda -f traza.pcap [-p 443] [-v]
  *            sudo ./sonda -i eth0
  * ===========================================================================
  */
@@ -39,6 +40,17 @@
 #define IPPROTO_UDP_    17
 
 #define IP_OFFMASK  0x1FFF      /* 13 bits bajos del campo flags+offset     */
+
+#define TCP_HLEN_MIN    20      /* cabecera TCP sin opciones                */
+
+/* Flags TCP (byte 13 de la cabecera) */
+#define TH_FIN  0x01
+#define TH_SYN  0x02
+#define TH_RST  0x04
+#define TH_PSH  0x08
+#define TH_ACK  0x10
+
+#define TLS_HANDSHAKE   22      /* tipo de registro TLS: handshake (0x16)   */
 
 /* --- cabeceras ---------------------------------------------------------
  * Usamos structs empaquetados para mapearlos directamente sobre el buffer.
@@ -71,6 +83,23 @@ struct ip_hdr {
 #define IP_V(h)   (((h)->vhl) >> 4)
 #define IP_HL(h)  ((((h)->vhl) & 0x0F) * 4)   /* en bytes, no en palabras   */
 
+/* Cabecera TCP (RFC 9293). Igual que en IP, la longitud de la cabecera va
+ * en palabras de 32 bits: el "data offset" son los 4 bits altos del byte 12.
+ * Puede haber opciones (MSS, timestamps, SACK...), asi que NUNCA asumir 20. */
+struct tcp_hdr {
+    uint16_t sport;
+    uint16_t dport;
+    uint32_t seq;           /* numero de secuencia del primer byte de datos  */
+    uint32_t ack;
+    uint8_t  off;           /* data offset (4b alto) + reservado (4b bajo)   */
+    uint8_t  flags;         /* CWR ECE URG ACK PSH RST SYN FIN               */
+    uint16_t win;
+    uint16_t sum;
+    uint16_t urp;
+} __attribute__((packed));
+
+#define TCP_HL(h) ((((h)->off) >> 4) * 4)       /* en bytes                  */
+
 /* --- estado global ------------------------------------------------------ */
 static pcap_t *descr = NULL;
 
@@ -86,14 +115,36 @@ static struct {
     uint64_t tcp;
     uint64_t udp;
     uint64_t otros_proto;
+    uint64_t tcp_malformados;
+    uint64_t tcp_puerto;        /* segmentos del puerto analizado            */
+    uint64_t tcp_con_datos;     /*   ... que llevan datos                    */
+    uint64_t tcp_tls_hs;        /*   ... que empiezan por un registro TLS    */
+    uint64_t bytes_datos;
 } est;
 
 static int verbose = 0;
+static uint16_t puerto = 443;   /* puerto TCP a analizar (-p)              */
 
 /* --- utilidades --------------------------------------------------------- */
 static void ip_str(const uint8_t a[4], char *out, size_t n)
 {
     snprintf(out, n, "%u.%u.%u.%u", a[0], a[1], a[2], a[3]);
+}
+
+/* Flags TCP como texto, al estilo de Wireshark: "SYN,ACK" */
+static void flags_str(uint8_t f, char *out, size_t n)
+{
+    out[0] = '\0';
+    const struct { uint8_t bit; const char *nom; } t[] = {
+        {TH_SYN, "SYN"}, {TH_FIN, "FIN"}, {TH_RST, "RST"},
+        {TH_PSH, "PSH"}, {TH_ACK, "ACK"}
+    };
+    for (size_t i = 0; i < sizeof t / sizeof t[0]; i++) {
+        if (f & t[i].bit) {
+            if (out[0]) strncat(out, ",", n - strlen(out) - 1);
+            strncat(out, t[i].nom, n - strlen(out) - 1);
+        }
+    }
 }
 
 static void manejar_senal(int s)
@@ -176,24 +227,64 @@ static void analizar_paquete(u_char *user,
 
     switch (ip->proto) {
         case IPPROTO_TCP_: est.tcp++; break;
-        case IPPROTO_UDP_: est.udp++; break;
-        default:           est.otros_proto++; break;
+        case IPPROTO_UDP_: est.udp++; return;
+        default:           est.otros_proto++; return;
+    }
+
+    /* ================= BLOQUE 2: TCP ================= */
+    off += ip_hl;                                   /* off apunta a TCP     */
+
+    if (payload_len < TCP_HLEN_MIN || caplen < off + TCP_HLEN_MIN) {
+        est.tcp_malformados++; return;
+    }
+    const struct tcp_hdr *tcp = (const struct tcp_hdr *)(pkt + off);
+
+    int tcp_hl = TCP_HL(tcp);                       /* NO asumir 20         */
+    if (tcp_hl < TCP_HLEN_MIN || tcp_hl > payload_len) {
+        est.tcp_malformados++; return;
+    }
+
+    uint16_t sport = ntohs(tcp->sport);
+    uint16_t dport = ntohs(tcp->dport);
+
+    /* Filtro de puerto: nos vale en cualquiera de los dos sentidos */
+    if (sport != puerto && dport != puerto) return;
+    est.tcp_puerto++;
+
+    /* Datos de aplicacion: lo que queda tras la cabecera TCP, medido con
+     * la longitud de IP (no con caplen, por el relleno de Ethernet).     */
+    uint32_t datos_len = (uint32_t)(payload_len - tcp_hl);
+    const u_char *datos = pkt + off + tcp_hl;
+
+    /* Si el snaplen corto la captura, faltan datos: no se pueden analizar */
+    if (caplen < off + (uint32_t)tcp_hl + datos_len) {
+        est.truncados++; return;
+    }
+
+    if (datos_len > 0) {
+        est.tcp_con_datos++;
+        est.bytes_datos += datos_len;
+        /* Un registro TLS de handshake empieza por 0x16 0x03 */
+        if (datos_len >= 5 && datos[0] == TLS_HANDSHAKE && datos[1] == 0x03)
+            est.tcp_tls_hs++;
     }
 
     if (verbose) {
-        char s[16], d[16];
+        char s[16], d[16], fl[32];
         ip_str(ip->src, s, sizeof s);
         ip_str(ip->dst, d, sizeof d);
-        const char *p = ip->proto == IPPROTO_TCP_ ? "TCP"
-                      : ip->proto == IPPROTO_UDP_ ? "UDP" : "otro";
-        printf("  #%-6" PRIu64 "  %-15s -> %-15s  %-4s  "
-               "ip_hl=%d  total=%u  payload=%d  ttl=%u\n",
-               est.total, s, d, p, ip_hl, ip_len, payload_len, ip->ttl);
+        flags_str(tcp->flags, fl, sizeof fl);
+        printf("  #%-4" PRIu64 " %s:%u -> %s:%u  [%s]  seq=%u ack=%u  "
+               "tcp_hl=%d  len=%u",
+               est.total, s, sport, d, dport, fl,
+               ntohl(tcp->seq), ntohl(tcp->ack), tcp_hl, datos_len);
+        if (datos_len >= 5 && datos[0] == TLS_HANDSHAKE && datos[1] == 0x03)
+            printf("  <- empieza registro TLS handshake (%u bytes)",
+                   (unsigned)((datos[3] << 8) | datos[4]) + 5);
+        printf("\n");
     }
 
-    /* BLOQUE 2: aqui entrará la diseccion TCP, con
-     *   const u_char *tcp = pkt + off + ip_hl;
-     */
+    /* BLOQUE 3: aqui entrara la tabla de flujos y el reensamblado TCP */
 }
 
 /* --- resumen ------------------------------------------------------------ */
@@ -211,6 +302,12 @@ static void imprimir_resumen(void)
     printf("      TCP ...................... %" PRIu64 "\n", est.tcp);
     printf("      UDP ...................... %" PRIu64 "\n", est.udp);
     printf("      otros protocolos ......... %" PRIu64 "\n", est.otros_proto);
+    printf("  TCP puerto %u\n", puerto);
+    printf("    segmentos .................. %" PRIu64 "\n", est.tcp_puerto);
+    printf("      con datos ................ %" PRIu64 "  (%" PRIu64 " bytes)\n",
+           est.tcp_con_datos, est.bytes_datos);
+    printf("      inicio de registro TLS ... %" PRIu64 "\n", est.tcp_tls_hs);
+    printf("    TCP malformados ............ %" PRIu64 "\n", est.tcp_malformados);
     printf("-------------------------------------------------------\n");
 }
 
@@ -218,10 +315,11 @@ static void imprimir_resumen(void)
 static void uso(const char *prog)
 {
     fprintf(stderr,
-            "Uso: %s (-f traza.pcap | -i interfaz) [-v]\n"
+            "Uso: %s (-f traza.pcap | -i interfaz) [-p puerto] [-v]\n"
             "  -f  leer de un fichero pcap\n"
             "  -i  capturar de una interfaz (requiere privilegios)\n"
-            "  -v  imprimir una linea por paquete\n", prog);
+            "  -p  puerto TCP a analizar (por defecto 443)\n"
+            "  -v  imprimir una linea por segmento TCP del puerto\n", prog);
 }
 
 int main(int argc, char **argv)
@@ -230,10 +328,16 @@ int main(int argc, char **argv)
     const char *fichero = NULL, *interfaz = NULL;
     int opt;
 
-    while ((opt = getopt(argc, argv, "f:i:vh")) != -1) {
+    while ((opt = getopt(argc, argv, "f:i:p:vh")) != -1) {
         switch (opt) {
             case 'f': fichero  = optarg; break;
             case 'i': interfaz = optarg; break;
+            case 'p': {
+                long v = strtol(optarg, NULL, 10);
+                if (v < 1 || v > 65535) { fprintf(stderr, "Puerto no valido\n"); return 1; }
+                puerto = (uint16_t)v;
+                break;
+            }
             case 'v': verbose = 1; break;
             default:  uso(argv[0]); return 1;
         }
