@@ -7,6 +7,8 @@
  *
  * BLOQUE 1: captura y diseccion hasta la capa IP.
  * BLOQUE 2: diseccion de la cabecera TCP y filtro por puerto.
+ * BLOQUE 3: tabla de flujos y reensamblado TCP del primer registro TLS
+ *           de cada sentido (ClientHello / ServerHello).
  *
  * Compilar:  gcc -Wall -Wextra -std=gnu11 -o sonda sonda.c -lpcap
  * Ejecutar:  ./sonda -f traza.pcap [-p 443] [-v]
@@ -51,6 +53,10 @@
 #define TH_ACK  0x10
 
 #define TLS_HANDSHAKE   22      /* tipo de registro TLS: handshake (0x16)   */
+#define TLS_REC_HLEN     5      /* cabecera de registro: tipo+version+long  */
+#define TLS_REC_MAX  (16384 + TLS_REC_HLEN)  /* registro TLS mas grande     */
+
+#define N_CUBETAS     4096      /* tamano de la tabla hash de flujos        */
 
 /* --- cabeceras ---------------------------------------------------------
  * Usamos structs empaquetados para mapearlos directamente sobre el buffer.
@@ -100,6 +106,36 @@ struct tcp_hdr {
 
 #define TCP_HL(h) ((((h)->off) >> 4) * 4)       /* en bytes                  */
 
+/* --- flujos (BLOQUE 3) ---------------------------------------------------
+ * Un flujo es una conexion TCP: el mismo par (IP:puerto, IP:puerto) en los
+ * dos sentidos. Para que los paquetes de ida y de vuelta caigan en el mismo
+ * flujo, la clave se guarda en orden canonico: el extremo "menor" primero.
+ *
+ * Cada sentido tiene su propio buffer de reensamblado. Solo guardamos el
+ * PRIMER registro TLS de cada sentido: en el cliente es el ClientHello y en
+ * el servidor el ServerHello, que es todo lo que necesitamos.
+ */
+struct sentido {
+    int       tiene_isn;    /* sabemos donde empieza el flujo de datos      */
+    uint32_t  isn;          /* seq del primer byte de datos (ISN + 1)        */
+    uint8_t  *buf;          /* bytes recibidos, colocados por posicion       */
+    uint8_t  *mapa;         /* 1 bit por byte: 1 = ya recibido               */
+    uint32_t  contiguos;    /* bytes seguidos disponibles desde el 0         */
+    uint32_t  necesarios;   /* longitud del registro TLS (0 = aun no se sabe) */
+    int       segmentos;    /* segmentos con datos que han aportado algo    */
+    int       completo;     /* el registro ya esta entero                   */
+    int       descartado;   /* no empieza por TLS: no nos interesa          */
+};
+
+struct flujo {
+    uint32_t ip_a, ip_b;    /* orden canonico: (ip_a,puerto_a) <= (ip_b,puerto_b) */
+    uint16_t puerto_a, puerto_b;
+    struct sentido dir[2];  /* 0: a -> b    1: b -> a                       */
+    struct flujo *sig;      /* siguiente en la misma cubeta                 */
+};
+
+static struct flujo *tabla[N_CUBETAS];
+
 /* --- estado global ------------------------------------------------------ */
 static pcap_t *descr = NULL;
 
@@ -120,6 +156,11 @@ static struct {
     uint64_t tcp_con_datos;     /*   ... que llevan datos                    */
     uint64_t tcp_tls_hs;        /*   ... que empiezan por un registro TLS    */
     uint64_t bytes_datos;
+    uint64_t flujos;
+    uint64_t desordenados;      /* llegan antes que un hueco anterior        */
+    uint64_t retransmisiones;   /* no aportan ningun byte nuevo              */
+    uint64_t registros_completos;
+    uint64_t sin_memoria;
 } est;
 
 static int verbose = 0;
@@ -145,6 +186,119 @@ static void flags_str(uint8_t f, char *out, size_t n)
             strncat(out, t[i].nom, n - strlen(out) - 1);
         }
     }
+}
+
+/* ======================= BLOQUE 3: flujos ============================ */
+
+static uint32_t hash_flujo(uint32_t a, uint32_t b, uint16_t pa, uint16_t pb)
+{
+    uint32_t h = a * 2654435761u ^ b * 2246822519u ^ ((uint32_t)pa << 16 | pb);
+    h ^= h >> 15;
+    return h % N_CUBETAS;
+}
+
+/* Busca el flujo del paquete (o lo crea) y devuelve en *d su sentido. */
+static struct flujo *buscar_flujo(uint32_t src, uint16_t sport,
+                                  uint32_t dst, uint16_t dport, int *d)
+{
+    uint32_t a = src, b = dst;
+    uint16_t pa = sport, pb = dport;
+    *d = 0;
+    if (src > dst || (src == dst && sport > dport)) {   /* orden canonico */
+        a = dst; b = src; pa = dport; pb = sport; *d = 1;
+    }
+    uint32_t h = hash_flujo(a, b, pa, pb);
+    for (struct flujo *f = tabla[h]; f; f = f->sig)
+        if (f->ip_a == a && f->ip_b == b && f->puerto_a == pa && f->puerto_b == pb)
+            return f;
+
+    struct flujo *f = calloc(1, sizeof *f);
+    if (!f) { est.sin_memoria++; return NULL; }
+    f->ip_a = a; f->ip_b = b; f->puerto_a = pa; f->puerto_b = pb;
+    f->sig = tabla[h];
+    tabla[h] = f;
+    est.flujos++;
+    return f;
+}
+
+static void liberar_sentido(struct sentido *s)
+{
+    free(s->buf);  s->buf  = NULL;
+    free(s->mapa); s->mapa = NULL;
+}
+
+static void liberar_flujos(void)
+{
+    for (int i = 0; i < N_CUBETAS; i++) {
+        struct flujo *f = tabla[i];
+        while (f) {
+            struct flujo *sig = f->sig;
+            liberar_sentido(&f->dir[0]);
+            liberar_sentido(&f->dir[1]);
+            free(f);
+            f = sig;
+        }
+        tabla[i] = NULL;
+    }
+}
+
+/* Coloca un segmento en el buffer de su sentido.
+ * La posicion de cada byte dentro del flujo es  seq - isn  (aritmetica de
+ * 32 bits sin signo, asi que funciona aunque el numero de secuencia de la
+ * vuelta). Esto resuelve a la vez los segmentos desordenados (se colocan en
+ * su sitio aunque falte el anterior) y las retransmisiones (se escriben
+ * encima de bytes que ya estaban, sin cambiar nada).                       */
+static void insertar_segmento(struct sentido *s, uint32_t seq,
+                              const u_char *datos, uint32_t len)
+{
+    if (!s->buf) {
+        s->buf  = malloc(TLS_REC_MAX);
+        s->mapa = calloc(TLS_REC_MAX / 8 + 1, 1);
+        if (!s->buf || !s->mapa) { liberar_sentido(s); est.sin_memoria++; return; }
+    }
+
+    uint32_t pos = seq - s->isn;
+    if (pos >= TLS_REC_MAX) return;              /* mas alla de lo que guardamos */
+    if (len > TLS_REC_MAX - pos) len = TLS_REC_MAX - pos;
+
+    int nuevos = 0;
+    for (uint32_t i = pos; i < pos + len; i++) {
+        if (!(s->mapa[i / 8] & (1u << (i % 8)))) {
+            s->mapa[i / 8] |= (uint8_t)(1u << (i % 8));
+            nuevos++;
+        }
+    }
+    if (nuevos == 0) { est.retransmisiones++; return; }  /* nada nuevo */
+    if (pos > s->contiguos) est.desordenados++;          /* deja un hueco detras */
+    memcpy(s->buf + pos, datos, len);
+    s->segmentos++;
+
+    /* Avanzar el limite de bytes contiguos (puede saltar varios segmentos
+     * de golpe cuando llega el que tapaba un hueco).                       */
+    while (s->contiguos < TLS_REC_MAX &&
+           (s->mapa[s->contiguos / 8] & (1u << (s->contiguos % 8))))
+        s->contiguos++;
+}
+
+/* Comprueba si ya tenemos el primer registro TLS entero.
+ * Devuelve 1 justo cuando se completa.                                     */
+static int registro_completo(struct sentido *s)
+{
+    if (s->completo || s->descartado) return 0;
+
+    if (s->necesarios == 0 && s->contiguos >= TLS_REC_HLEN) {
+        if (s->buf[0] != TLS_HANDSHAKE || s->buf[1] != 0x03) {
+            s->descartado = 1;                   /* no es TLS: lo ignoramos */
+            liberar_sentido(s);
+            return 0;
+        }
+        s->necesarios = TLS_REC_HLEN + ((uint32_t)s->buf[3] << 8 | s->buf[4]);
+    }
+    if (s->necesarios && s->contiguos >= s->necesarios) {
+        s->completo = 1;
+        return 1;
+    }
+    return 0;
 }
 
 static void manejar_senal(int s)
@@ -284,7 +438,54 @@ static void analizar_paquete(u_char *user,
         printf("\n");
     }
 
-    /* BLOQUE 3: aqui entrara la tabla de flujos y el reensamblado TCP */
+    /* ================= BLOQUE 3: flujo y reensamblado ================= */
+    uint32_t src, dst;
+    memcpy(&src, ip->src, 4);  src = ntohl(src);
+    memcpy(&dst, ip->dst, 4);  dst = ntohl(dst);
+
+    int d;
+    struct flujo *f = buscar_flujo(src, sport, dst, dport, &d);
+    if (!f) return;
+    struct sentido *s = &f->dir[d];
+    uint32_t seq = ntohl(tcp->seq);
+
+    /* El SYN fija el punto de partida: el primer byte de datos es ISN+1 */
+    if (tcp->flags & TH_SYN) {
+        s->isn = seq + 1;
+        s->tiene_isn = 1;
+    }
+
+    if (datos_len == 0 || s->completo || s->descartado) return;
+
+    /* Si la captura empezo con la conexion ya abierta no hemos visto el SYN.
+     * Solo lo aceptamos si este segmento empieza un registro TLS.          */
+    if (!s->tiene_isn) {
+        if (datos_len >= TLS_REC_HLEN && datos[0] == TLS_HANDSHAKE && datos[1] == 0x03) {
+            s->isn = seq;
+            s->tiene_isn = 1;
+        } else {
+            s->descartado = 1;
+            return;
+        }
+    }
+
+    insertar_segmento(s, seq, datos, datos_len);
+
+    if (registro_completo(s)) {
+        est.registros_completos++;
+        char a[16], b[16];
+        ip_str(ip->src, a, sizeof a);
+        ip_str(ip->dst, b, sizeof b);
+        uint8_t tipo = s->buf[TLS_REC_HLEN];          /* 1er byte del mensaje */
+        const char *nombre = tipo == 1 ? "ClientHello"
+                           : tipo == 2 ? "ServerHello" : "otro mensaje";
+        printf("  >> %s:%u -> %s:%u  %s completo: %u bytes en %d segmento(s)\n",
+               a, sport, b, dport, nombre, s->necesarios, s->segmentos);
+
+        /* BLOQUE 4: aqui se leera el mensaje: s->buf, s->necesarios bytes */
+
+        liberar_sentido(s);              /* ya no hace falta guardar mas */
+    }
 }
 
 /* --- resumen ------------------------------------------------------------ */
@@ -308,6 +509,13 @@ static void imprimir_resumen(void)
            est.tcp_con_datos, est.bytes_datos);
     printf("      inicio de registro TLS ... %" PRIu64 "\n", est.tcp_tls_hs);
     printf("    TCP malformados ............ %" PRIu64 "\n", est.tcp_malformados);
+    printf("  Reensamblado\n");
+    printf("    flujos ..................... %" PRIu64 "\n", est.flujos);
+    printf("    segmentos desordenados ..... %" PRIu64 "\n", est.desordenados);
+    printf("    retransmisiones ............ %" PRIu64 "\n", est.retransmisiones);
+    printf("    registros TLS completos .... %" PRIu64 "\n", est.registros_completos);
+    if (est.sin_memoria)
+        printf("    SIN MEMORIA ................ %" PRIu64 "\n", est.sin_memoria);
     printf("-------------------------------------------------------\n");
 }
 
@@ -382,6 +590,7 @@ int main(int argc, char **argv)
     }
 
     imprimir_resumen();
+    liberar_flujos();
     pcap_close(descr);
     return 0;
 }
