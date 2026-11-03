@@ -1,0 +1,96 @@
+# grupos_pqc.csv - NamedGroups TLS (extensiones supported_groups y key_share)
+# Fuente principal: IANA TLS Supported Groups, actualizado 2026-10-28 (consultado 2026-11-03)
+# clase: clasico | pq | hibrido | hibrido_obsoleto | experimental
+# long_cliente / long_servidor: bytes esperados del key_exchange (0 = no se comprueba)
+# Valores GREASE (0x0A0A, 0x1A1A ... 0xFAFA) no se listan: se detectan por patron
+id_hex,id_dec,nombre,clase,long_cliente,long_servidor,fuente
+0x0017,23,secp256r1,clasico,65,65,IANA
+0x0018,24,secp384r1,clasico,97,97,IANA
+0x0019,25,secp521r1,clasico,133,133,IANA
+0x001A,26,brainpoolP256r1,clasico,0,0,IANA
+0x001B,27,brainpoolP384r1,clasico,0,0,IANA
+0x001C,28,brainpoolP512r1,clasico,0,0,IANA
+0x001D,29,x25519,clasico,32,32,IANA
+0x001E,30,x448,clasico,56,56,IANA
+0x001F,31,brainpoolP256r1tls13,clasico,0,0,IANA
+0x0020,32,brainpoolP384r1tls13,clasico,0,0,IANA
+0x0021,33,brainpoolP512r1tls13,clasico,0,0,IANA
+0x0022,34,GC256A,clasico,0,0,IANA
+0x0023,35,GC256B,clasico,0,0,IANA
+0x0024,36,GC256C,clasico,0,0,IANA
+0x0025,37,GC256D,clasico,0,0,IANA
+0x0026,38,GC512A,clasico,0,0,IANA
+0x0027,39,GC512B,clasico,0,0,IANA
+0x0028,40,GC512C,clasico,0,0,IANA
+0x0029,41,curveSM2,clasico,0,0,IANA
+0x0100,256,ffdhe2048,clasico,0,0,IANA
+0x0101,257,ffdhe3072,clasico,0,0,IANA
+0x0102,258,ffdhe4096,clasico,0,0,IANA
+0x0103,259,ffdhe6144,clasico,0,0,IANA
+0x0104,260,ffdhe8192,clasico,0,0,IANA
+0x0200,512,MLKEM512,pq,800,768,IANA / draft-ietf-tls-mlkem-10
+0x0201,513,MLKEM768,pq,1184,1088,IANA / draft-ietf-tls-mlkem-10
+0x0202,514,MLKEM1024,pq,1568,1568,IANA / draft-ietf-tls-mlkem-10
+0x11E9,4585,SecP256r1MLKEM512,hibrido,0,0,IANA / draft-rosomakho-tls-ecdhe-mlkem512-00
+0x11EA,4586,MLKEM512X25519,hibrido,0,0,IANA / draft-rosomakho-tls-ecdhe-mlkem512-00
+0x11EB,4587,SecP256r1MLKEM768,hibrido,1249,1153,IANA / RFC 10024
+0x11EC,4588,X25519MLKEM768,hibrido,1216,1120,IANA / RFC 10024
+0x11ED,4589,SecP384r1MLKEM1024,hibrido,1665,1665,IANA / RFC 10024
+0x11EE,4590,curveSM2MLKEM768,hibrido,0,0,IANA / draft-yang-tls-hybrid-sm2-mlkem-03
+0x11EF,4591,MLKEM1024X448,hibrido,0,0,IANA / draft-preussmattsson-tls-mlkem1024-x448-01
+0x6399,25497,X25519Kyber768Draft00,hibrido_obsoleto,1216,1120,IANA (OBSOLETE) / draft-tls-westerbaan-xyber768d00
+0x639A,25498,SecP256r1Kyber768Draft00,hibrido_obsoleto,0,0,IANA (OBSOLETE) / draft-kwiatkowski-tls-ecdhe-kyber
+0x2F4C,12108,p384_mlkem768,experimental,0,0,oqs-provider (no IANA)
+0x2F4D,12109,p521_mlkem1024,experimental,0,0,oqs-provider (no IANA)
+0x2FB7,12215,x448_mlkem768,experimental,0,0,oqs-provider (no IANA)
+0xFE00,65024,efrodo640aes,experimental,0,0,oqs-provider (no IANA)
+0xFE01,65025,p256_efrodo640aes,experimental,0,0,oqs-provider (no IANA)
+0xFE02,65026,x25519_efrodo640aes,experimental,0,0,oqs-provider (no IANA)
+0xFE03,65027,efrodo640shake,experimental,0,0,oqs-provider (no IANA)
+0xFE04,65028,p256_efrodo640shake,experimental,0,0,oqs-provider (no IANA)
+0xFE05,65029,x25519_efrodo640shake,experimental,0,0,oqs-provider (no IANA)
+0xFE06,65030,efrodo976aes,experimental,0,0,oqs-provider (no IANA)
+0xFE07,65031,p384_efrodo976aes,experimental,0,0,oqs-provider (no IANA)
+0xFE08,65032,x448_efrodo976aes,experimental,0,0,oqs-provider (no IANA)
+0xFE09,65033,efrodo976shake,experimental,0,0,oqs-provider (no IANA)
+0xFE0A,65034,p384_efrodo976shake,experimental,0,0,oqs-provider (no IANA)
+0xFE0B,65035,x448_efrodo976shake,experimental,0,0,oqs-provider (no IANA)
+0xFE0C,65036,efrodo1344aes,experimental,0,0,oqs-provider (no IANA)
+0xFE0D,65037,p521_efrodo1344aes,experimental,0,0,oqs-provider (no IANA)
+0xFE0E,65038,efrodo1344shake,experimental,0,0,oqs-provider (no IANA)
+0xFE0F,65039,p521_efrodo1344shake,experimental,0,0,oqs-provider (no IANA)
+0xFE10,65040,bikel1,experimental,0,0,oqs-provider (no IANA)
+0xFE11,65041,p256_bikel1,experimental,0,0,oqs-provider (no IANA)
+0xFE12,65042,x25519_bikel1,experimental,0,0,oqs-provider (no IANA)
+0xFE13,65043,bikel3,experimental,0,0,oqs-provider (no IANA)
+0xFE14,65044,p384_bikel3,experimental,0,0,oqs-provider (no IANA)
+0xFE15,65045,x448_bikel3,experimental,0,0,oqs-provider (no IANA)
+0xFE16,65046,bikel5,experimental,0,0,oqs-provider (no IANA)
+0xFE17,65047,p521_bikel5,experimental,0,0,oqs-provider (no IANA)
+0xFE20,65056,bp256_mlkem512,experimental,0,0,oqs-provider (no IANA)
+0xFE21,65057,bp384_mlkem768,experimental,0,0,oqs-provider (no IANA)
+0xFE22,65058,bp512_mlkem1024,experimental,0,0,oqs-provider (no IANA)
+0xFE23,65059,frodo640aes,experimental,0,0,oqs-provider (no IANA)
+0xFE24,65060,p256_frodo640aes,experimental,0,0,oqs-provider (no IANA)
+0xFE25,65061,x25519_frodo640aes,experimental,0,0,oqs-provider (no IANA)
+0xFE26,65062,frodo640shake,experimental,0,0,oqs-provider (no IANA)
+0xFE27,65063,p256_frodo640shake,experimental,0,0,oqs-provider (no IANA)
+0xFE28,65064,x25519_frodo640shake,experimental,0,0,oqs-provider (no IANA)
+0xFE29,65065,frodo976aes,experimental,0,0,oqs-provider (no IANA)
+0xFE2A,65066,p384_frodo976aes,experimental,0,0,oqs-provider (no IANA)
+0xFE2B,65067,x448_frodo976aes,experimental,0,0,oqs-provider (no IANA)
+0xFE2C,65068,frodo976shake,experimental,0,0,oqs-provider (no IANA)
+0xFE2D,65069,p384_frodo976shake,experimental,0,0,oqs-provider (no IANA)
+0xFE2E,65070,x448_frodo976shake,experimental,0,0,oqs-provider (no IANA)
+0xFE2F,65071,frodo1344aes,experimental,0,0,oqs-provider (no IANA)
+0xFE30,65072,p521_frodo1344aes | X25519Kyber512Draft00 (Cloudflare; antiguo),experimental,0,0,oqs-provider (no IANA)
+0xFE31,65073,frodo1344shake | X25519Kyber768Draft00 (Cloudflare; antiguo),experimental,0,0,oqs-provider (no IANA)
+0xFE32,65074,p521_frodo1344shake,experimental,0,0,oqs-provider (no IANA)
+0xFE33,65075,hqc1,experimental,0,0,oqs-provider (no IANA)
+0xFE34,65076,p256_hqc1,experimental,0,0,oqs-provider (no IANA)
+0xFE35,65077,x25519_hqc1,experimental,0,0,oqs-provider (no IANA)
+0xFE36,65078,hqc3,experimental,0,0,oqs-provider (no IANA)
+0xFE37,65079,p384_hqc3,experimental,0,0,oqs-provider (no IANA)
+0xFE38,65080,x448_hqc3,experimental,0,0,oqs-provider (no IANA)
+0xFE39,65081,hqc5,experimental,0,0,oqs-provider (no IANA)
+0xFE3A,65082,p521_hqc5,experimental,0,0,oqs-provider (no IANA)
