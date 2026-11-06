@@ -14,6 +14,8 @@ Uso:
 
 Genera:
     casos_clasificacion.pcap      un caso por cada situacion de clasificacion
+    casos_ipv6.pcap               los mismos casos sobre IPv6, uno de ellos
+                                  con una cabecera de extension (hop-by-hop)
     reensamblado_desordenado.pcap ClientHello en 3 segmentos, desordenado y
                                   con una retransmision
     rendimiento.pcap              muchas conexiones mezcladas, para medir
@@ -24,7 +26,7 @@ import random
 import struct
 import sys
 
-from scapy.all import IP, TCP, Ether, Raw, conf, wrpcap
+from scapy.all import IP, IPv6, IPv6ExtHdrHopByHop, TCP, Ether, Raw, conf, wrpcap
 
 conf.verb = 0
 
@@ -97,14 +99,23 @@ def registro(tipo, datos, version=0x0303):
 
 # ------------------------------------------------------- conexion TCP
 class Conexion:
-    def __init__(self, ip_cliente, ip_servidor, puerto_cliente, puerto_servidor=443, mss=1460):
+    def __init__(self, ip_cliente, ip_servidor, puerto_cliente, puerto_servidor=443, mss=1460,
+                 hop_by_hop=False):
         self.c, self.s = ip_cliente, ip_servidor
+        self.ipv6 = ":" in ip_cliente
+        self.hbh = hop_by_hop          # anadir una cabecera de extension IPv6
         self.pc, self.ps, self.mss = puerto_cliente, puerto_servidor, mss
         self.seq_c, self.seq_s = random.getrandbits(32), random.getrandbits(32)
         self.paquetes = []
 
     def _pkt(self, del_cliente, flags, seq, ack, datos=b""):
-        ip = IP(src=self.c, dst=self.s) if del_cliente else IP(src=self.s, dst=self.c)
+        src, dst = (self.c, self.s) if del_cliente else (self.s, self.c)
+        if self.ipv6:
+            ip = IPv6(src=src, dst=dst)
+            if self.hbh:
+                ip = ip / IPv6ExtHdrHopByHop()
+        else:
+            ip = IP(src=src, dst=dst)
         tcp = (TCP(sport=self.pc, dport=self.ps, flags=flags, seq=seq, ack=ack) if del_cliente
                else TCP(sport=self.ps, dport=self.pc, flags=flags, seq=seq, ack=ack))
         p = Ether(src="02:00:00:00:00:01", dst="02:00:00:00:00:02") / ip / tcp
@@ -138,10 +149,14 @@ class Conexion:
 
 
 # ------------------------------------------------------------ casos
-def caso(n, sni, grupos, claves, elegido, hrr=False, servidor_tls12=False, mss=1460):
+def caso(n, sni, grupos, claves, elegido, hrr=False, servidor_tls12=False, mss=1460,
+         ipv6=False, hop_by_hop=False):
     """Una conexion completa. n distingue IP y puerto del cliente."""
-    con = Conexion(f"10.0.{n >> 8 & 255}.{n & 255}", f"198.51.100.{n % 200 + 1}",
-                   40000 + n % 20000, mss=mss)
+    if ipv6:   # 2001:db8::/32 es el prefijo reservado para documentacion
+        cli, srv = f"2001:db8:c::{n:x}", f"2001:db8:5::{n % 200 + 1:x}"
+    else:
+        cli, srv = f"10.0.{n >> 8 & 255}.{n & 255}", f"198.51.100.{n % 200 + 1}"
+    con = Conexion(cli, srv, 40000 + n % 20000, mss=mss, hop_by_hop=hop_by_hop)
     con.handshake_tcp()
     con.enviar(True, registro(0x16, client_hello(sni, grupos, claves), version=0x0301))
     if hrr:   # el servidor pide X25519MLKEM768; el cliente repite el ClientHello con esa clave
@@ -184,6 +199,15 @@ def traza_casos():
     return poner_tiempos(pk)
 
 
+def traza_casos_ipv6():
+    """Los mismos casos sobre IPv6. El caso 1 lleva ademas una cabecera
+    hop-by-hop, para comprobar que la sonda salta las extensiones."""
+    pk = []
+    for i, (sni, sabe, manda, elige, op) in enumerate(CASOS, start=1):
+        pk += caso(i, sni, sabe, manda, elige, ipv6=True, hop_by_hop=(i == 1), **op)
+    return poner_tiempos(pk)
+
+
 def traza_desordenada():
     con = Conexion("10.0.0.2", "104.16.123.96", 51515, mss=600)
     con.handshake_tcp()
@@ -211,6 +235,7 @@ def main():
     random.seed(2026)   # mismas trazas en cada ejecucion
 
     for nombre, pk in [("casos_clasificacion.pcap", traza_casos()),
+                       ("casos_ipv6.pcap", traza_casos_ipv6()),
                        ("reensamblado_desordenado.pcap", traza_desordenada()),
                        ("rendimiento.pcap", traza_rendimiento(n_rend))]:
         ruta = os.path.join(salida, nombre)

@@ -5,3 +5,4 @@ referencia/*.pdf
 referencia/sonda_tfg/
 zeek/.state/
 trazas/rendimiento.pcap
+trazas/reales/
