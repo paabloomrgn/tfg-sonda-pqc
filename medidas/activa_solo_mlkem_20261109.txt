@@ -1,0 +1,28 @@
+wikipedia.org  ->  alert handshake failure
+alert number 
+github.com  ->  alert handshake failure
+alert number 
+amazon.es  ->  alert handshake failure
+alert number 
+uam.es  ->  sin respuesta
+ucm.es  ->  alert handshake failure
+alert number 
+upm.es  ->  alert handshake failure
+alert number 
+santander.es  ->  sin respuesta
+boe.es  ->  alert handshake failure
+alert number 
+renfe.com  ->  sin respuesta
+===== uam.es
+Connecting to 150.244.214.237
+40D72EA890770000:error:0A000410:SSL routines:ssl3_read_bytes:ssl/tls alert handshake failure:../ssl/record/rec_layer_s3.c:918:SSL alert number 40
+===== santander.es
+Connecting to 194.224.167.58
+405703A50C7E0000:error:0A000126:SSL routines::unexpected eof while reading:../ssl/record/rec_layer_s3.c:698:
+===== renfe.com
+Connecting to 213.144.49.50
+CONNECTION ESTABLISHED
+Protocol version: TLSv1.2
+Ciphersuite: AES128-GCM-SHA256
+Peer certificate: C=ES, ST=Madrid, O=Renfe Operadora, CN=renfe.com
+Verification: OK
