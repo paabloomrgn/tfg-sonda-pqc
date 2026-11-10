@@ -322,6 +322,7 @@ static struct {
     uint64_t ipv4;
     uint64_t ipv6;
     uint64_t fragmentos;
+    uint64_t tso;               /* longitud IP a 0 por segmentation offload */
     uint64_t tcp;
     uint64_t udp;
     uint64_t otros_proto;
@@ -842,7 +843,10 @@ static struct veredicto clasificar(const struct flujo *f)
     else if (pq_negociado && f->hay_hrr)     { v.servidor = "fuerza_pq";     v.motivo = M_HRR_PQ; }
     else if (pq_negociado)                   { v.servidor = "soporta_pq";    v.motivo = M_ELIGIO_PQ; }
     else if (!tls13 && ch->ofrece_tls13)     { v.servidor = "inseguro";      v.motivo = M_VERSION_SIN_PQ; }
-    else if (ch_manda_clave_pq(chu))         { v.servidor = "inseguro";      v.motivo = M_CLAVE_PQ_RECHAZADA; }
+    /* Mira los dos ClientHello: si el primero ya llevaba clave PQ y el
+     * servidor pidio un grupo clasico con HRR, la rechazo igualmente.    */
+    else if (ch_manda_clave_pq(ch) || ch_manda_clave_pq(chu))
+                                             { v.servidor = "inseguro";      v.motivo = M_CLAVE_PQ_RECHAZADA; }
     else if (ch_tiene_pq(ch))                { v.servidor = "indeterminado"; v.motivo = M_PQ_SOLO_ANUNCIADO; }
     else                                     { v.servidor = "indeterminado"; v.motivo = M_CLIENTE_SIN_PQ; }
 
@@ -1408,9 +1412,20 @@ static void analizar_paquete(u_char *user,
         if (ip_hl < 20) { est.truncados++; return; }
         if (caplen < off + (uint32_t)ip_hl) { est.truncados++; return; }
 
-        uint16_t ip_len = ntohs(ip->len);       /* longitud total segun IP      */
+        uint32_t ip_len = ntohs(ip->len);       /* longitud total segun IP      */
         uint16_t frag   = ntohs(ip->off);
         est.ipv4++;
+
+        /* TCP Segmentation Offload (TSO/LSO): al capturar en el propio
+         * equipo que envia (Npcap en Windows, o Linux con TSO), el sistema
+         * entrega a la tarjeta un "super-segmento" de hasta 64 KB con la
+         * longitud IP a 0, y es la tarjeta quien lo trocea y la rellena.
+         * La captura se hace antes, asi que el campo llega a 0. En ese caso
+         * la unica longitud fiable es la capturada.                        */
+        if (ip_len == 0) {
+            ip_len = caplen - (uint32_t)off;
+            est.tso++;
+        }
 
         /* Un fragmento no se puede analizar sin reensamblado IP (el
          * primero si lleva TCP, pero cortado). Se cuentan y se descartan. */
@@ -1419,7 +1434,7 @@ static void analizar_paquete(u_char *user,
         /* Longitud del payload segun IP, no segun lo que nos dio pcap.
          * Ethernet rellena las tramas cortas hasta 60 B; fiarse de caplen
          * haria procesar relleno como si fueran datos.                    */
-        payload_len = ip_len - ip_hl;
+        payload_len = (int)ip_len - ip_hl;
         if (payload_len < 0) { est.truncados++; return; }
 
         ipv = 4; proto = ip->proto;
@@ -1433,6 +1448,12 @@ static void analizar_paquete(u_char *user,
         est.ipv6++;
 
         uint32_t resto = ntohs(ip6->plen);      /* bytes tras los 40 fijos  */
+        /* Igual que en IPv4: con TSO la longitud llega a 0 (o seria un
+         * jumbograma, que en la practica no se usa). Se toma la capturada. */
+        if (resto == 0 && caplen > off + IP6_HLEN) {
+            resto = caplen - (uint32_t)off - IP6_HLEN;
+            est.tso++;
+        }
         uint8_t nxt = ip6->nxt;
         memcpy(src, ip6->src, 16);
         memcpy(dst, ip6->dst, 16);
@@ -1613,6 +1634,8 @@ static void imprimir_resumen(void)
     fprintf(o, "    IPv4 ....................... %" PRIu64 "\n", est.ipv4);
     fprintf(o, "    IPv6 ....................... %" PRIu64 "\n", est.ipv6);
     fprintf(o, "      fragmentos descartados ... %" PRIu64 "\n", est.fragmentos);
+    if (est.tso)
+        fprintf(o, "      longitud IP a 0 (TSO) .... %" PRIu64 "\n", est.tso);
     fprintf(o, "      TCP ...................... %" PRIu64 "\n", est.tcp);
     fprintf(o, "      UDP ...................... %" PRIu64 "\n", est.udp);
     fprintf(o, "      otros protocolos ......... %" PRIu64 "\n", est.otros_proto);

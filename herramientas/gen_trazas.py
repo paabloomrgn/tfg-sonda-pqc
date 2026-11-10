@@ -159,10 +159,12 @@ def caso(n, sni, grupos, claves, elegido, hrr=False, servidor_tls12=False, mss=1
     con = Conexion(cli, srv, 40000 + n % 20000, mss=mss, hop_by_hop=hop_by_hop)
     con.handshake_tcp()
     con.enviar(True, registro(0x16, client_hello(sni, grupos, claves), version=0x0301))
-    if hrr:   # el servidor pide X25519MLKEM768; el cliente repite el ClientHello con esa clave
-        con.enviar(False, registro(0x16, server_hello(X25519MLKEM768, hrr=True)) + registro(0x14, b"\x01"))
+    if hrr:   # el servidor pide un grupo (X25519MLKEM768 si hrr=True); el cliente
+              # repite el ClientHello con la clave de ese grupo
+        pedido = X25519MLKEM768 if hrr is True else hrr
+        con.enviar(False, registro(0x16, server_hello(pedido, hrr=True)) + registro(0x14, b"\x01"))
         con.enviar(True, registro(0x14, b"\x01")
-                   + registro(0x16, client_hello(sni, grupos, [X25519MLKEM768])))
+                   + registro(0x16, client_hello(sni, grupos, [pedido])))
     if servidor_tls12:
         con.enviar(False, registro(0x16, server_hello(0, tls13=False, suite=0xC02F)
                                    + certificado_falso() + server_key_exchange(P256) + server_hello_done()))
@@ -181,6 +183,9 @@ CASOS = [
     ("4-rechaza-clave-pq.es", [X25519MLKEM768, X25519, P256],     [X25519MLKEM768, X25519], X25519, {}),
     ("5-no-fuerza-pq.es",     [X25519MLKEM768, X25519, P256],     [X25519],              X25519, {}),
     ("6-servidor-tls12.es",   [X25519MLKEM768, X25519, P256],     [X25519MLKEM768, X25519], X25519, {"servidor_tls12": True}),
+    # Visto en trafico real (Microsoft): el cliente manda clave PQ y el
+    # servidor pide un grupo clasico con HelloRetryRequest
+    ("7-hrr-pide-clasico.es", [X25519MLKEM768, X25519, P256],     [X25519MLKEM768, X25519], P256, {"hrr": P256}),
 ]
 
 

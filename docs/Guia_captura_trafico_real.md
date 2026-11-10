@@ -96,22 +96,30 @@ Lanza el bucle de curl en otra terminal y para la sonda con Ctrl+C.
 
 **1.** Instala Wireshark para Windows (con Npcap) y crea en Chrome un perfil nuevo sin cuentas.
 
+Lista de webs usada (10/11/2026), siempre en este orden: google.com, youtube.com, cloudflare.com, wikipedia.org, github.com, microsoft.com, apple.com, amazon.es, uam.es, ucm.es, upm.es, bbva.es, santander.es, elpais.com, rtve.es, boe.es, renfe.com, instagram.com, netflix.com. Esperar a que cargue cada una y unos 5 s más; no hace falta tocar Wireshark entre webs.
+
+Antes de empezar, cerrar Edge y las aplicaciones que no se necesiten: todo su tráfico HTTPS también se captura.
+
 **2. Primera pasada, con QUIC activado (el comportamiento normal).**
-- En Wireshark, elige la interfaz Wi-Fi (o Ethernet).
-- Pon el filtro de captura `tcp port 443 or udp port 443` y pulsa Iniciar.
-- Navega 5 minutos por sitios variados.
-- Para y guarda como `chrome_quic_on.pcapng` en `C:\Users\<usuario>\tfg_capturas\`.
+- Comprobar en `chrome://net-internals/#quic` que *QUIC Enabled* es `true`.
+- En Wireshark, *Captura → Opciones*: interfaz Wi-Fi (o Ethernet) y filtro de captura **exactamente** `tcp port 443 or udp port 443` (la caja se pone verde). Sin la parte `udp`, QUIC no se guarda.
+- Comprobación en directo: con youtube.com abierto, escribir `quic` en el filtro de visualización; deben salir paquetes.
+- Visitar la lista, parar y guardar como `chrome_quic_on.pcapng` en `C:\Users\<usuario>\tfg_capturas\`.
 
 **3. Segunda pasada, sin QUIC.**
-- Abre `chrome://flags`, busca *Experimental QUIC protocol*, ponlo en *Disabled* y reinicia Chrome.
-- Repite la captura y guárdala como `chrome_quic_off.pcapng`.
+- Abre `chrome://flags`, busca *Experimental QUIC protocol*, ponlo en *Disabled* y pulsa *Relaunch*.
+- Comprobar en `chrome://net-internals/#quic` que *QUIC Enabled* es `false`. (`chrome.exe --disable-quic` no sirve si Chrome sigue abierto en segundo plano.)
+- Repite la captura con el mismo filtro y guárdala como `chrome_quic_off.pcapng`.
+- **Al terminar, volver a poner el flag en *Default***: se mantiene aunque se reinicie Chrome.
+
+El filtro usado queda grabado en el pcapng (Wireshark: *Estadísticas → Propiedades del fichero de captura*). Conviene revisarlo antes de dar una captura por buena.
 
 **4. Copiar a WSL y analizar:**
 
 ```bash
 cp /mnt/c/Users/<usuario>/tfg_capturas/*.pcapng ~/tfg/trazas/reales/
 cd ~/tfg/sonda
-./sonda -f ../trazas/reales/chrome_quic_off.pcapng -o ../medidas/chrome_quic_off.ndjson
+./sonda -f ../trazas/reales/chrome_quic_off.pcapng -o ../medidas/chrome_quic_off_$(date +%Y%m%d).ndjson
 ./sonda -f ../trazas/reales/chrome_quic_on.pcapng  -o ../medidas/chrome_quic_on.ndjson
 ```
 
