@@ -16,6 +16,8 @@ Genera:
     casos_clasificacion.pcap      un caso por cada situacion de clasificacion
     casos_ipv6.pcap               los mismos casos sobre IPv6, uno de ellos
                                   con una cabecera de extension (hop-by-hop)
+    casos_rechazo.pcap            el servidor no contesta con ServerHello:
+                                  Alert, FIN, RST o nada
     reensamblado_desordenado.pcap ClientHello en 3 segmentos, desordenado y
                                   con una retransmision
     rendimiento.pcap              muchas conexiones mezcladas, para medir
@@ -143,6 +145,14 @@ class Conexion:
     def enviar(self, del_cliente, datos):
         self.paquetes += self.segmentos(del_cliente, datos)
 
+    def cerrar_servidor(self, rst=False):
+        """El servidor corta sin mandar nada mas (FIN o RST)"""
+        if rst:
+            self.paquetes.append(self._pkt(False, "R", self.seq_s, self.seq_c))
+        else:
+            self.paquetes += [self._pkt(False, "FA", self.seq_s, self.seq_c),
+                              self._pkt(True, "FA", self.seq_c, self.seq_s + 1)]
+
     def cerrar(self):
         self.paquetes += [self._pkt(True, "FA", self.seq_c, self.seq_s),
                           self._pkt(False, "FA", self.seq_s, self.seq_c + 1)]
@@ -173,6 +183,40 @@ def caso(n, sni, grupos, claves, elegido, hrr=False, servidor_tls12=False, mss=1
                    + registro(0x17, aleatorio(300)))
     con.cerrar()
     return con.paquetes
+
+
+def caso_rechazo(n, sni, grupos, claves, respuesta, ipv6=False):
+    """El servidor no contesta con un ServerHello. respuesta:
+       ("alerta", codigo)  Alert fatal con ese codigo (40 = handshake_failure)
+       ("fin",)            cierra con FIN sin mandar nada
+       ("rst",)            cierra con RST
+       ("nada",)           no contesta (la captura acaba antes)"""
+    cli, srv = f"10.1.{n >> 8 & 255}.{n & 255}", f"203.0.113.{n % 200 + 1}"
+    con = Conexion(cli, srv, 41000 + n, mss=1460)
+    con.handshake_tcp()
+    con.enviar(True, registro(0x16, client_hello(sni, grupos, claves), version=0x0301))
+    if respuesta[0] == "alerta":
+        con.enviar(False, registro(0x15, u8(2) + u8(respuesta[1])))
+        con.cerrar_servidor()
+    elif respuesta[0] == "fin":
+        con.cerrar_servidor()
+    elif respuesta[0] == "rst":
+        con.cerrar_servidor(rst=True)
+    return con.paquetes
+
+
+# Veredicto esperado del servidor entre corchetes
+CASOS_RECHAZO = [
+    # El cliente solo ofrece PQ (como la sonda activa de Roberto)
+    ("r1-alerta-solo-pq.es",   [X25519MLKEM768], [X25519MLKEM768], ("alerta", 40)),   # [inseguro]
+    ("r2-fin-solo-pq.es",      [X25519MLKEM768], [X25519MLKEM768], ("fin",)),         # [inseguro]
+    ("r3-rst-solo-pq.es",      [X25519MLKEM768], [X25519MLKEM768], ("rst",)),         # [inseguro]
+    # El cliente tambien ofrece clasico: el fallo no dice nada de PQ
+    ("r4-alerta-normal.es",    [X25519MLKEM768, X25519], [X25519MLKEM768, X25519], ("alerta", 112)),  # [indeterminado]
+    ("r5-fin-normal.es",       [X25519MLKEM768, X25519], [X25519MLKEM768, X25519], ("fin",)),         # [indeterminado]
+    # No contesta nada
+    ("r6-sin-respuesta.es",    [X25519MLKEM768], [X25519MLKEM768], ("nada",)),        # [indeterminado]
+]
 
 
 CASOS = [
@@ -213,6 +257,13 @@ def traza_casos_ipv6():
     return poner_tiempos(pk)
 
 
+def traza_casos_rechazo():
+    pk = []
+    for i, (sni, sabe, manda, resp) in enumerate(CASOS_RECHAZO, start=1):
+        pk += caso_rechazo(i, sni, sabe, manda, resp)
+    return poner_tiempos(pk)
+
+
 def traza_desordenada():
     con = Conexion("10.0.0.2", "104.16.123.96", 51515, mss=600)
     con.handshake_tcp()
@@ -241,6 +292,7 @@ def main():
 
     for nombre, pk in [("casos_clasificacion.pcap", traza_casos()),
                        ("casos_ipv6.pcap", traza_casos_ipv6()),
+                       ("casos_rechazo.pcap", traza_casos_rechazo()),
                        ("reensamblado_desordenado.pcap", traza_desordenada()),
                        ("rendimiento.pcap", traza_rendimiento(n_rend))]:
         ruta = os.path.join(salida, nombre)

@@ -1,0 +1,10 @@
+google.com  ->  group: X25519MLKEM768
+cloudflare.com  ->  group: X25519MLKEM768
+microsoft.com  ->  group: X25519MLKEM768
+bbva.es  ->  group: X25519MLKEM768
+wikipedia.org  ->  alert handshake failure
+github.com  ->  alert handshake failure
+uam.es  ->  sin respuesta
+boe.es  ->  alert handshake failure
+santander.es  ->  unexpected eof
+renfe.com  ->  Protocol version: TLSv1.2

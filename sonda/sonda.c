@@ -16,6 +16,8 @@
  *           el servidor segun la tabla grupos_pqc.csv.
  * BLOQUE 5: salida NDJSON (una linea por conexion, al estilo de TLScensus)
  *           y estado acumulado por servidor.
+ * BLOQUE 6: respuestas que no son un ServerHello: Alert del servidor y
+ *           cierre de la conexion (FIN o RST) tras el ClientHello.
  *
  * Compilar:  gcc -Wall -Wextra -std=gnu11 -o sonda sonda.c -lpcap
  * Ejecutar:  ./sonda -f traza.pcap [-p 443] [-g grupos_pqc.csv] [-o salida.ndjson]
@@ -89,6 +91,7 @@
 
 /* Tipos de registro y de mensaje TLS */
 #define TLS_CCS          20     /* ChangeCipherSpec                         */
+#define TLS_ALERT        21     /* Alert: nivel (1) + descripcion (1)       */
 #define TLS_HS_CLIENT_HELLO        1
 #define TLS_HS_SERVER_HELLO        2
 #define TLS_HS_SERVER_KEY_EXCHANGE 12   /* solo TLS <= 1.2                  */
@@ -224,6 +227,11 @@ struct flujo {
     enum ske tipo_ske;
     uint16_t grupo_tls12;   /* curva del ServerKeyExchange                  */
     int      terminado;     /* ya clasificado: ignorar el resto del flujo  */
+    /* BLOQUE 6: el servidor no contesto con un ServerHello */
+    int      hay_alerta;    /* mando un Alert en claro                      */
+    uint8_t  alerta_nivel;  /* 1 = warning, 2 = fatal                        */
+    uint8_t  alerta_desc;   /* codigo de la alerta (40 = handshake_failure)  */
+    char     cierre_srv;    /* 'F' = FIN, 'R' = RST, 0 = no cerro            */
 };
 
 /* --- tabla de grupos (cargada de grupos_pqc.csv) ------------------------ */
@@ -255,12 +263,17 @@ enum motivo_srv {
     M_CLAVE_PQ_RECHAZADA,   /* tenia la clave PQ del cliente y eligio clasico */
     M_PQ_SOLO_ANUNCIADO,    /* cliente solo anuncio PQ; servidor no lo pidio */
     M_CLIENTE_SIN_PQ,       /* el cliente no ofrecia PQ                      */
+    M_RECHAZA_SOLO_PQ,      /* cliente solo PQ y el servidor manda un Alert  */
+    M_CIERRA_SOLO_PQ,       /* cliente solo PQ y el servidor cierra (FIN/RST) */
+    M_ALERTA,               /* Alert a un cliente que tambien ofrecia clasico */
+    M_CIERRE,               /* cierre ante un cliente que tambien ofrecia clasico */
     N_MOTIVOS
 };
 
 static const char *MOTIVO_CODIGO[N_MOTIVOS] = {
     "sin_respuesta", "hrr_pide_pq", "eligio_pq", "version_sin_pq",
-    "clave_pq_rechazada", "pq_solo_anunciado", "cliente_sin_pq"
+    "clave_pq_rechazada", "pq_solo_anunciado", "cliente_sin_pq",
+    "rechaza_solo_pq", "cierra_solo_pq", "alerta", "cierre"
 };
 static const char *MOTIVO_TEXTO[N_MOTIVOS] = {
     "no se vio el ServerHello",
@@ -269,7 +282,11 @@ static const char *MOTIVO_TEXTO[N_MOTIVOS] = {
     "el cliente ofrecia TLS 1.3 y eligio una version sin PQ",
     "tenia la clave PQ del cliente y eligio clasico",
     "el cliente solo anuncio PQ y el servidor no lo pidio con HRR",
-    "el cliente no ofrecia PQ"
+    "el cliente no ofrecia PQ",
+    "el cliente solo ofrecia PQ y respondio con un Alert",
+    "el cliente solo ofrecia PQ y cerro la conexion",
+    "respondio con un Alert, pero el cliente tambien ofrecia clasico",
+    "cerro la conexion, pero el cliente tambien ofrecia clasico"
 };
 
 #define MAX_NOMBRES_SRV  8      /* SNI distintos que guardamos por servidor  */
@@ -293,7 +310,7 @@ static struct servidor *tabla_srv[N_CUBETAS];
 
 /* --- veredicto de una conexion ------------------------------------------ */
 struct veredicto {
-    const char *conexion;       /* segura | insegura | sin_respuesta         */
+    const char *conexion;       /* segura | insegura | rechazada | sin_respuesta */
     const char *cliente;        /* inseguro | potencialmente_inseguro | seguro */
     const char *cliente_motivo; /* no_ofrece_pq | pq_y_clasico | solo_pq     */
     const char *servidor;       /* inseguro | indeterminado | soporta_pq | fuerza_pq */
@@ -341,8 +358,10 @@ static struct {
     uint64_t tls_malformados;
     uint64_t hs_partidos;       /* mensaje de handshake repartido en varios registros */
     uint64_t long_incorrecta;   /* key_share con longitud distinta de la esperada */
+    uint64_t alertas;           /* Alert del servidor en lugar de ServerHello */
+    uint64_t cierres;           /* FIN/RST del servidor en lugar de ServerHello */
     uint64_t conexiones;
-    uint64_t con_segura, con_insegura, con_sin_respuesta;
+    uint64_t con_segura, con_insegura, con_rechazada, con_sin_respuesta;
     uint64_t cli_inseguro, cli_potencial, cli_seguro;
     uint64_t srv_inseguro, srv_indeterminado, srv_soporta_pq, srv_fuerza_pq;
     /* BLOQUE 5 */
@@ -829,7 +848,9 @@ static struct veredicto clasificar(const struct flujo *f)
     int pq_negociado = tls13 && es_pq(f->sh.grupo);
 
     /* ---- conexion ---- */
-    if (!f->hay_sh)        v.conexion = "sin_respuesta";
+    int rechazo = !f->hay_sh && (f->hay_alerta || f->cierre_srv);
+    if (rechazo)           v.conexion = "rechazada";
+    else if (!f->hay_sh)   v.conexion = "sin_respuesta";
     else if (pq_negociado) v.conexion = "segura";
     else                   v.conexion = "insegura";
 
@@ -839,7 +860,17 @@ static struct veredicto clasificar(const struct flujo *f)
     else                           { v.cliente = "seguro";                  v.cliente_motivo = "solo_pq"; }
 
     /* ---- servidor: por lo que eligio y lo que tenia disponible ---- */
-    if (!f->hay_sh)                          { v.servidor = "indeterminado"; v.motivo = M_SIN_RESPUESTA; }
+    /* BLOQUE 6. Un Alert o un cierre solo dicen algo de PQ si el cliente
+     * no le daba otra opcion (solo ofrecia grupos PQ, como la sonda activa
+     * de Roberto): entonces el servidor no soporta PQ. Si el cliente
+     * tambien ofrecia clasico, el fallo puede deberse a cualquier otra
+     * cosa (SNI, version, certificado...) y no se puede concluir nada.   */
+    int solo_pq = ch_tiene_pq(ch) && !ch_tiene_clasico(ch);
+    if (rechazo && solo_pq)                  { v.servidor = "inseguro";
+                                               v.motivo = f->hay_alerta ? M_RECHAZA_SOLO_PQ : M_CIERRA_SOLO_PQ; }
+    else if (rechazo)                        { v.servidor = "indeterminado";
+                                               v.motivo = f->hay_alerta ? M_ALERTA : M_CIERRE; }
+    else if (!f->hay_sh)                     { v.servidor = "indeterminado"; v.motivo = M_SIN_RESPUESTA; }
     else if (pq_negociado && f->hay_hrr)     { v.servidor = "fuerza_pq";     v.motivo = M_HRR_PQ; }
     else if (pq_negociado)                   { v.servidor = "soporta_pq";    v.motivo = M_ELIGIO_PQ; }
     else if (!tls13 && ch->ofrece_tls13)     { v.servidor = "inseguro";      v.motivo = M_VERSION_SIN_PQ; }
@@ -857,6 +888,35 @@ static struct veredicto clasificar(const struct flujo *f)
     else if (ch_tiene_pq(ch))      v.pq_status = "advertised_only";
     else                           v.pq_status = "classical";
     return v;
+}
+
+/* ======================= BLOQUE 6: alertas ============================= */
+
+/* Nombre de una alerta TLS (RFC 8446 6, RFC 5246 7.2) */
+static const char *nombre_alerta(uint8_t d)
+{
+    switch (d) {
+        case 0:   return "close_notify";
+        case 10:  return "unexpected_message";
+        case 20:  return "bad_record_mac";
+        case 22:  return "record_overflow";
+        case 40:  return "handshake_failure";
+        case 42:  return "bad_certificate";
+        case 47:  return "illegal_parameter";
+        case 50:  return "decode_error";
+        case 51:  return "decrypt_error";
+        case 70:  return "protocol_version";
+        case 71:  return "insufficient_security";
+        case 80:  return "internal_error";
+        case 86:  return "inappropriate_fallback";
+        case 90:  return "user_canceled";
+        case 109: return "missing_extension";
+        case 110: return "unsupported_extension";
+        case 112: return "unrecognized_name";
+        case 116: return "certificate_required";
+        case 120: return "no_application_protocol";
+        default:  return "desconocida";
+    }
 }
 
 /* ======================= BLOQUE 5: salida JSON ========================= */
@@ -971,6 +1031,13 @@ static void j_conexion(const struct flujo *f, const struct veredicto *v,
                 f->sh.long_clave,
                 (g && g->long_servidor) ? (g->long_servidor == f->sh.long_clave ? "true" : "false") : "null");
     }
+    if (f->hay_alerta)
+        fprintf(salida, ",\"server_alert\":{\"level\":\"%s\",\"code\":%u,\"description\":\"%s\"}",
+                f->alerta_nivel == 2 ? "fatal" : "warning", f->alerta_desc, nombre_alerta(f->alerta_desc));
+    else
+        fprintf(salida, ",\"server_alert\":null");
+    fprintf(salida, ",\"server_close\":%s",
+            f->cierre_srv == 'F' ? "\"fin\"" : f->cierre_srv == 'R' ? "\"rst\"" : "null");
     fprintf(salida, ",\"hrr\":%s", f->hay_hrr ? "true" : "false");
     if (f->hay_hrr) {
         fprintf(salida, ",\"hrr_group\":");
@@ -1054,6 +1121,12 @@ static void texto_conexion(const struct flujo *f, const struct veredicto *v,
         }
         fprintf(salida, "\n");
     }
+    if (f->hay_alerta)
+        fprintf(salida, "    %-22sAlert %s %u (%s)\n", "Servidor responde:",
+                f->alerta_nivel == 2 ? "fatal" : "warning", f->alerta_desc, nombre_alerta(f->alerta_desc));
+    else if (f->cierre_srv)
+        fprintf(salida, "    %-22scierra la conexion con %s\n", "Servidor responde:",
+                f->cierre_srv == 'R' ? "RST" : "FIN");
     fprintf(salida, "    => CONEXION: %s\n", v->conexion);
     fprintf(salida, "    => CLIENTE:  %s (%s)\n", v->cliente, v->cliente_motivo);
     fprintf(salida, "    => SERVIDOR: %s (%s)\n", v->servidor, MOTIVO_TEXTO[v->motivo]);
@@ -1113,12 +1186,18 @@ static const char *estado_servidor(const struct servidor *s, const char **motivo
 {
     uint32_t pq       = s->motivo[M_ELIGIO_PQ] + s->motivo[M_HRR_PQ];
     uint32_t rechazo  = s->motivo[M_CLAVE_PQ_RECHAZADA] + s->motivo[M_VERSION_SIN_PQ];
+    uint32_t no_pq    = s->motivo[M_RECHAZA_SOLO_PQ] + s->motivo[M_CIERRA_SOLO_PQ];
     uint32_t clasico  = s->motivo[M_PQ_SOLO_ANUNCIADO] + s->motivo[M_CLIENTE_SIN_PQ];
 
     if (rechazo) { *motivo = "ha elegido clasico teniendo la opcion PQ"; return "inseguro"; }
+    if (no_pq && pq) { *motivo = "unas veces negocia PQ y otras rechaza a clientes solo PQ"; return "inseguro"; }
+    if (no_pq) { *motivo = "rechaza a los clientes que solo ofrecen PQ"; return "inseguro"; }
     if (pq && clasico) { *motivo = "elige PQ, pero tambien acepta clasico"; return "potencialmente_inseguro"; }
     if (pq) { *motivo = "solo se le ha visto negociar PQ"; return "seguro"; }
     if (clasico) { *motivo = "ningun cliente le ha dado la clave PQ"; return "indeterminado"; }
+    if (s->motivo[M_ALERTA] + s->motivo[M_CIERRE]) {
+        *motivo = "rechaza el handshake por una causa que no se puede atribuir a PQ"; return "indeterminado";
+    }
     *motivo = "no se ha visto ninguna respuesta"; return "indeterminado";
 }
 
@@ -1204,6 +1283,7 @@ static void informe(struct flujo *f)
 
     if (!strcmp(v.conexion, "segura")) est.con_segura++;
     else if (!strcmp(v.conexion, "insegura")) est.con_insegura++;
+    else if (!strcmp(v.conexion, "rechazada")) est.con_rechazada++;
     else est.con_sin_respuesta++;
     if (!strcmp(v.cliente, "inseguro")) est.cli_inseguro++;
     else if (!strcmp(v.cliente, "seguro")) est.cli_seguro++;
@@ -1280,7 +1360,22 @@ static void procesar_mensaje(struct flujo *f, int d, uint8_t tipo,
 static void procesar_registro(struct flujo *f, int d, const uint8_t *r, uint32_t n)
 {
     if (r[0] == TLS_CCS) return;               /* ChangeCipherSpec: saltar */
-    if (r[0] != TLS_HANDSHAKE) { parar_sentido(f, d); return; }   /* cifrado o alerta */
+    /* BLOQUE 6: Alert del servidor en lugar de ServerHello. Va en claro
+     * porque todavia no hay claves: nivel (1 byte) + descripcion (1 byte). */
+    if (r[0] == TLS_ALERT && f->dir_cliente >= 0 && d != f->dir_cliente &&
+        f->n_ch > 0 && !f->hay_sh) {
+        if (n >= TLS_REC_HLEN + 2) {
+            f->hay_alerta   = 1;
+            f->alerta_nivel = r[TLS_REC_HLEN];
+            f->alerta_desc  = r[TLS_REC_HLEN + 1];
+            est.alertas++;
+            terminar(f);
+        } else {
+            parar_sentido(f, d);
+        }
+        return;
+    }
+    if (r[0] != TLS_HANDSHAKE) { parar_sentido(f, d); return; }   /* cifrado */
 
     uint32_t pos = TLS_REC_HLEN;
     while (pos < n && !f->terminado && !f->dir[d].fin) {
@@ -1614,6 +1709,16 @@ static void analizar_paquete(u_char *user,
 
     /* Fin de la conexion: FIN en los dos sentidos o RST. Se informa de lo
      * pendiente y se libera el flujo entero.                              */
+    /* BLOQUE 6: el servidor cierra (FIN o RST) despues del ClientHello sin
+     * haber mandado ni ServerHello ni Alert. Se clasifica en ese momento.
+     * Si el Alert venia en este mismo segmento, ya se proceso arriba.     */
+    if ((tcp->flags & (TH_FIN | TH_RST)) && !f->terminado && f->dir_cliente >= 0 &&
+        d != f->dir_cliente && f->n_ch > 0 && !f->hay_sh && !f->hay_hrr) {
+        f->cierre_srv = (tcp->flags & TH_RST) ? 'R' : 'F';
+        est.cierres++;
+        terminar(f);
+    }
+
     if (tcp->flags & TH_FIN) f->fin_visto[d] = 1;
     if ((tcp->flags & TH_RST) || (f->fin_visto[0] && f->fin_visto[1])) {
         cerrar_flujo(f);
@@ -1655,8 +1760,9 @@ static void imprimir_resumen(void)
         fprintf(o, "    SIN MEMORIA ................ %" PRIu64 "\n", est.sin_memoria);
     fprintf(o, "  Clasificacion (%" PRIu64 " conexiones TLS, %" PRIu64 " servidores)\n",
             est.conexiones, est.servidores);
-    fprintf(o, "    conexiones   segura %" PRIu64 " | insegura %" PRIu64 " | sin respuesta %" PRIu64 "\n",
-            est.con_segura, est.con_insegura, est.con_sin_respuesta);
+    fprintf(o, "    conexiones   segura %" PRIu64 " | insegura %" PRIu64 " | rechazada %" PRIu64
+            " | sin respuesta %" PRIu64 "\n",
+            est.con_segura, est.con_insegura, est.con_rechazada, est.con_sin_respuesta);
     fprintf(o, "    clientes     inseguro %" PRIu64 " | potencialmente inseguro %" PRIu64 " | seguro %" PRIu64 "\n",
             est.cli_inseguro, est.cli_potencial, est.cli_seguro);
     fprintf(o, "    servidores   inseguro %" PRIu64 " | indeterminado %" PRIu64
@@ -1666,6 +1772,8 @@ static void imprimir_resumen(void)
         fprintf(o, "    mensajes TLS malformados ... %" PRIu64 "\n", est.tls_malformados);
     if (est.hs_partidos)
         fprintf(o, "    mensajes en varios registros %" PRIu64 "\n", est.hs_partidos);
+    if (est.alertas || est.cierres)
+        fprintf(o, "    sin ServerHello: Alert %" PRIu64 " | cierre %" PRIu64 "\n", est.alertas, est.cierres);
     if (est.long_incorrecta)
         fprintf(o, "    key_share de long. rara .... %" PRIu64 "\n", est.long_incorrecta);
     fprintf(o, "-------------------------------------------------------\n");
