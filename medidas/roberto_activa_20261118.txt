@@ -1,0 +1,109 @@
+Checking 20 servers with up to 10 threads...
+[1/40] www.elpais.com | SecP256r1MLKEM768 -> Not supported
+[2/40] www.google.com | SecP256r1MLKEM768 -> Not supported
+[3/40] www.amazon.es | SecP256r1MLKEM768 -> Supported
+[4/40] www.caixabank.es | SecP256r1MLKEM768 -> Not supported
+[5/40] www.amazon.es | X25519MLKEM768 -> Supported
+[6/40] www.elpais.com | X25519MLKEM768 -> Not supported
+[7/40] www.caixabank.es | X25519MLKEM768 -> Supported
+[8/40] www.google.com | X25519MLKEM768 -> Supported
+[9/40] www.wikipedia.org | SecP256r1MLKEM768 -> Not supported
+[10/40] www.wikipedia.org | X25519MLKEM768 -> Not supported
+[11/40] www.bbva.es | X25519MLKEM768 -> Supported
+[12/40] www.bbva.es | SecP256r1MLKEM768 -> Not supported
+[13/40] www.ing.es | SecP256r1MLKEM768 -> Not supported
+[14/40] www.ing.es | X25519MLKEM768 -> Supported
+[15/40] www.uam.es | X25519MLKEM768 -> Not supported
+[16/40] www.upm.es | X25519MLKEM768 -> Not supported
+[17/40] www.uam.es | SecP256r1MLKEM768 -> Not supported
+[18/40] www.santander.es | X25519MLKEM768 -> Not supported
+[19/40] www.upm.es | SecP256r1MLKEM768 -> Not supported
+[20/40] www.santander.es | SecP256r1MLKEM768 -> Not supported
+[21/40] www.uc3m.es | X25519MLKEM768 -> Not supported
+[22/40] www.uc3m.es | SecP256r1MLKEM768 -> Not supported
+[23/40] www.boe.es | X25519MLKEM768 -> Not supported
+[24/40] www.ucm.es | X25519MLKEM768 -> Not supported
+[25/40] www.ucm.es | SecP256r1MLKEM768 -> Not supported
+[26/40] www.boe.es | SecP256r1MLKEM768 -> Not supported
+[27/40] sede.administracion.gob.es | X25519MLKEM768 -> Supported
+[28/40] sede.administracion.gob.es | SecP256r1MLKEM768 -> Supported
+[29/40] www.seg-social.es | SecP256r1MLKEM768 -> Not supported
+[30/40] www.renfe.com | SecP256r1MLKEM768 -> Not supported
+[31/40] www.seg-social.es | X25519MLKEM768 -> Supported
+[32/40] www.renfe.com | X25519MLKEM768 -> Supported
+[33/40] www.correos.es | X25519MLKEM768 -> Supported
+[34/40] www.sabadell.com | X25519MLKEM768 -> Not supported
+[35/40] www.sabadell.com | SecP256r1MLKEM768 -> Not supported
+[36/40] www.correos.es | SecP256r1MLKEM768 -> Supported
+[37/40] www.movistar.es | SecP256r1MLKEM768 -> Not supported
+[38/40] www.movistar.es | X25519MLKEM768 -> Not supported
+[39/40] www.idealista.com | SecP256r1MLKEM768 -> Not supported
+[40/40] www.idealista.com | X25519MLKEM768 -> Supported
+www.google.com:
+Supported: X25519MLKEM768
+Not supported: SecP256r1MLKEM768
+
+www.wikipedia.org:
+Not supported: SecP256r1MLKEM768, X25519MLKEM768
+
+www.amazon.es:
+Supported: SecP256r1MLKEM768, X25519MLKEM768
+
+www.elpais.com:
+Not supported: SecP256r1MLKEM768, X25519MLKEM768
+
+www.caixabank.es:
+Supported: X25519MLKEM768
+Not supported: SecP256r1MLKEM768
+
+www.bbva.es:
+Supported: X25519MLKEM768
+Not supported: SecP256r1MLKEM768
+
+www.santander.es:
+Not supported: X25519MLKEM768, SecP256r1MLKEM768
+
+www.ing.es:
+Supported: X25519MLKEM768
+Not supported: SecP256r1MLKEM768
+
+www.sabadell.com:
+Not supported: X25519MLKEM768, SecP256r1MLKEM768
+
+www.uam.es:
+Not supported: X25519MLKEM768, SecP256r1MLKEM768
+
+www.upm.es:
+Not supported: X25519MLKEM768, SecP256r1MLKEM768
+
+www.uc3m.es:
+Not supported: X25519MLKEM768, SecP256r1MLKEM768
+
+www.ucm.es:
+Not supported: X25519MLKEM768, SecP256r1MLKEM768
+
+www.boe.es:
+Not supported: X25519MLKEM768, SecP256r1MLKEM768
+
+sede.administracion.gob.es:
+Supported: X25519MLKEM768, SecP256r1MLKEM768
+
+www.seg-social.es:
+Supported: X25519MLKEM768
+Not supported: SecP256r1MLKEM768
+
+www.renfe.com:
+Supported: X25519MLKEM768
+Not supported: SecP256r1MLKEM768
+
+www.correos.es:
+Supported: X25519MLKEM768, SecP256r1MLKEM768
+
+www.movistar.es:
+Not supported: SecP256r1MLKEM768, X25519MLKEM768
+
+www.idealista.com:
+Supported: X25519MLKEM768
+Not supported: SecP256r1MLKEM768
+
+

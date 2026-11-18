@@ -1248,10 +1248,13 @@ static const char *estado_servidor(const struct servidor *s, const char **motivo
     uint32_t clasico  = s->motivo[M_PQ_SOLO_ANUNCIADO] + s->motivo[M_CLIENTE_SIN_PQ];
 
     if (rechazo) { *motivo = "ha elegido clasico teniendo la opcion PQ"; return "inseguro"; }
-    if (no_pq && pq) { *motivo = "unas veces negocia PQ y otras rechaza a clientes solo PQ"; return "inseguro"; }
-    if (no_pq) { *motivo = "rechaza a los clientes que solo ofrecen PQ"; return "inseguro"; }
     if (pq && clasico) { *motivo = "elige PQ, pero tambien acepta clasico"; return "potencialmente_inseguro"; }
+    /* Negocia PQ con unos grupos y rechaza a un cliente que solo ofrece
+     * otros (p. ej. acepta X25519MLKEM768 pero no SecP256r1MLKEM768): sigue
+     * soportando PQ; solo no implementa todos los grupos.                  */
+    if (pq && no_pq) { *motivo = "negocia PQ, aunque no acepta todos los grupos PQ"; return "seguro"; }
     if (pq) { *motivo = "solo se le ha visto negociar PQ"; return "seguro"; }
+    if (no_pq) { *motivo = "rechaza a los clientes que solo ofrecen PQ"; return "inseguro"; }
     if (clasico) { *motivo = "ningun cliente le ha dado la clave PQ"; return "indeterminado"; }
     if (s->motivo[M_ALERTA] + s->motivo[M_CIERRE]) {
         *motivo = "rechaza el handshake por una causa que no se puede atribuir a PQ"; return "indeterminado";

@@ -75,4 +75,5 @@ sudo ./sonda -i eth0                                      # en vivo
 | 11/11/2026 | `Alertas_y_cierres.pdf` | Alert y cierres tras el ClientHello; contraste pasivo/activo |
 | 18/11/2026 | `Bateria_activa_y_sonda_pasiva.pdf` | Batería activa (variantes A/B/C) frente a la sonda pasiva en 20 dominios |
 | 18/11/2026 | `Otros_puertos_TLS.pdf` | Varios puertos (`-p tls`, `-p all`); PQ en correo y DNS sobre TLS |
+| 18/11/2026 | `Sonda_Roberto_frente_a_pasiva.pdf` | La `sonda.py` de Roberto frente a la sonda pasiva: 40/40 conexiones |
 | — | `Guia_captura_trafico_real.md` | Cómo capturar tráfico real |
