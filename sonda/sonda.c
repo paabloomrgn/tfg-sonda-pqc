@@ -310,7 +310,7 @@ static struct servidor *tabla_srv[N_CUBETAS];
 
 /* --- veredicto de una conexion ------------------------------------------ */
 struct veredicto {
-    const char *conexion;       /* segura | insegura | rechazada | sin_respuesta */
+    const char *conexion;       /* segura | insegura | incompleta | rechazada | sin_respuesta */
     const char *cliente;        /* inseguro | potencialmente_inseguro | seguro */
     const char *cliente_motivo; /* no_ofrece_pq | pq_y_clasico | solo_pq     */
     const char *servidor;       /* inseguro | indeterminado | soporta_pq | fuerza_pq */
@@ -361,7 +361,7 @@ static struct {
     uint64_t alertas;           /* Alert del servidor en lugar de ServerHello */
     uint64_t cierres;           /* FIN/RST del servidor en lugar de ServerHello */
     uint64_t conexiones;
-    uint64_t con_segura, con_insegura, con_rechazada, con_sin_respuesta;
+    uint64_t con_segura, con_insegura, con_rechazada, con_incompleta, con_sin_respuesta;
     uint64_t cli_inseguro, cli_potencial, cli_seguro;
     uint64_t srv_inseguro, srv_indeterminado, srv_soporta_pq, srv_fuerza_pq;
     /* BLOQUE 5 */
@@ -849,7 +849,12 @@ static struct veredicto clasificar(const struct flujo *f)
 
     /* ---- conexion ---- */
     int rechazo = !f->hay_sh && (f->hay_alerta || f->cierre_srv);
-    if (rechazo)           v.conexion = "rechazada";
+    /* HRR al que el cliente no siguio (una sonda activa que cierra tras la
+     * primera respuesta, o un cliente que no tiene el grupo pedido). La
+     * conexion no termina, pero el HRR ya dice que grupo exige el servidor. */
+    int solo_hrr = !f->hay_sh && f->hay_hrr;
+    if (solo_hrr)          v.conexion = "incompleta";
+    else if (rechazo)      v.conexion = "rechazada";
     else if (!f->hay_sh)   v.conexion = "sin_respuesta";
     else if (pq_negociado) v.conexion = "segura";
     else                   v.conexion = "insegura";
@@ -866,7 +871,11 @@ static struct veredicto clasificar(const struct flujo *f)
      * tambien ofrecia clasico, el fallo puede deberse a cualquier otra
      * cosa (SNI, version, certificado...) y no se puede concluir nada.   */
     int solo_pq = ch_tiene_pq(ch) && !ch_tiene_clasico(ch);
-    if (rechazo && solo_pq)                  { v.servidor = "inseguro";
+    if (solo_hrr && es_pq(f->hrr.grupo))     { v.servidor = "fuerza_pq";     v.motivo = M_HRR_PQ; }
+    else if (solo_hrr && ch_manda_clave_pq(ch))
+                                             { v.servidor = "inseguro";      v.motivo = M_CLAVE_PQ_RECHAZADA; }
+    else if (solo_hrr)                       { v.servidor = "indeterminado"; v.motivo = M_CLIENTE_SIN_PQ; }
+    else if (rechazo && solo_pq)                  { v.servidor = "inseguro";
                                                v.motivo = f->hay_alerta ? M_RECHAZA_SOLO_PQ : M_CIERRA_SOLO_PQ; }
     else if (rechazo)                        { v.servidor = "indeterminado";
                                                v.motivo = f->hay_alerta ? M_ALERTA : M_CIERRE; }
@@ -1284,6 +1293,7 @@ static void informe(struct flujo *f)
     if (!strcmp(v.conexion, "segura")) est.con_segura++;
     else if (!strcmp(v.conexion, "insegura")) est.con_insegura++;
     else if (!strcmp(v.conexion, "rechazada")) est.con_rechazada++;
+    else if (!strcmp(v.conexion, "incompleta")) est.con_incompleta++;
     else est.con_sin_respuesta++;
     if (!strcmp(v.cliente, "inseguro")) est.cli_inseguro++;
     else if (!strcmp(v.cliente, "seguro")) est.cli_seguro++;
@@ -1761,8 +1771,8 @@ static void imprimir_resumen(void)
     fprintf(o, "  Clasificacion (%" PRIu64 " conexiones TLS, %" PRIu64 " servidores)\n",
             est.conexiones, est.servidores);
     fprintf(o, "    conexiones   segura %" PRIu64 " | insegura %" PRIu64 " | rechazada %" PRIu64
-            " | sin respuesta %" PRIu64 "\n",
-            est.con_segura, est.con_insegura, est.con_rechazada, est.con_sin_respuesta);
+            " | incompleta %" PRIu64 " | sin respuesta %" PRIu64 "\n",
+            est.con_segura, est.con_insegura, est.con_rechazada, est.con_incompleta, est.con_sin_respuesta);
     fprintf(o, "    clientes     inseguro %" PRIu64 " | potencialmente inseguro %" PRIu64 " | seguro %" PRIu64 "\n",
             est.cli_inseguro, est.cli_potencial, est.cli_seguro);
     fprintf(o, "    servidores   inseguro %" PRIu64 " | indeterminado %" PRIu64

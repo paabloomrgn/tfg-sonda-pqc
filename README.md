@@ -45,7 +45,7 @@ sudo ./sonda -i eth0                                      # en vivo
 
 **Comprobación rápida:** `casos_clasificacion.pcap` tiene 7 casos y debe dar `soporta_pq`, `indeterminado`, `fuerza_pq`, `inseguro`, `indeterminado`, `inseguro`, `inseguro`.
 
-`casos_rechazo.pcap` (el servidor no responde con un ServerHello) tiene 6 casos y debe dar `inseguro` ×3, `indeterminado` ×3; las 5 primeras conexiones salen `rechazada` y la última `sin_respuesta`.
+`casos_rechazo.pcap` (el servidor no responde con un ServerHello) tiene 8 casos: el resumen debe dar `rechazada 5 | incompleta 2 | sin respuesta 1`.
 
 ## Documentación por tareas
 
@@ -70,4 +70,5 @@ sudo ./sonda -i eth0                                      # en vivo
 | 09/11/2026 | `Salida_JSON_y_trafico_real.pdf` | Salida JSON, IPv6 y captura real con curl |
 | 10/11/2026 | `Trafico_real_Chrome_y_QUIC.pdf` | Captura real con Chrome y efecto de QUIC |
 | 11/11/2026 | `Alertas_y_cierres.pdf` | Alert y cierres tras el ClientHello; contraste pasivo/activo |
+| 18/11/2026 | `Bateria_activa_y_sonda_pasiva.pdf` | Batería activa (variantes A/B/C) frente a la sonda pasiva en 20 dominios |
 | — | `Guia_captura_trafico_real.md` | Cómo capturar tráfico real |

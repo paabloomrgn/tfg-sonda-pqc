@@ -1,0 +1,484 @@
+### www.google.com — 2026-11-18T08:55:25+01:00
+==============================================================================
+  www.google.com
+==============================================================================
+  Version negociada: TLS 1.3
+
+  A  PQC en supported_groups, key_share solo clasico
+     ClientHello = 194 B (1 segmento)
+     HelloRetryRequest: el servidor EXIGE X25519MLKEM768 (0x11EC)
+     -> SEGURO
+
+  B  cliente puramente clasico
+     ClientHello = 192 B (1 segmento)
+     ServerHello: grupo elegido x25519 (0x001D), key_exchange = 32 B  [longitud conforme a RFC 10024]
+     -> NO INFORMATIVO (el cliente no ofrecio PQC)
+
+  C  PQC en supported_groups Y key_share postcuantico
+     ClientHello = 1414 B (1 segmento)
+     ServerHello: grupo elegido X25519MLKEM768 (0x11EC), key_exchange = 1120 B  [longitud conforme a RFC 10024]
+     -> SEGURO
+
+  Como leer esto:
+   · C elige PQC            -> servidor SEGURO, sin ambiguedad.
+   · A clasico pero C PQC   -> el servidor soporta PQC pero evita el
+                               HelloRetryRequest. A es INDETERMINADO.
+                               (medido en www.bbva.es, 12/10/2026)
+   · A y C clasicos         -> rechaza PQC teniendolo disponible: INSEGURO.
+   · HelloRetryRequest      -> exige ese grupo: soporte confirmado.
+### www.wikipedia.org — 2026-11-18T08:55:25+01:00
+==============================================================================
+  www.wikipedia.org
+==============================================================================
+  Version negociada: TLS 1.3
+
+  A  PQC en supported_groups, key_share solo clasico
+     ClientHello = 197 B (1 segmento)
+     ServerHello: grupo elegido x25519 (0x001D), key_exchange = 32 B  [longitud conforme a RFC 10024]
+     -> INDETERMINADO (pudo evitar el HelloRetryRequest)
+
+  B  cliente puramente clasico
+     ClientHello = 195 B (1 segmento)
+     ServerHello: grupo elegido x25519 (0x001D), key_exchange = 32 B  [longitud conforme a RFC 10024]
+     -> NO INFORMATIVO (el cliente no ofrecio PQC)
+
+  C  PQC en supported_groups Y key_share postcuantico
+     ClientHello = 1417 B (1 segmento)
+     ServerHello: grupo elegido x25519 (0x001D), key_exchange = 32 B  [longitud conforme a RFC 10024]
+     -> INSEGURO
+
+  Como leer esto:
+   · C elige PQC            -> servidor SEGURO, sin ambiguedad.
+   · A clasico pero C PQC   -> el servidor soporta PQC pero evita el
+                               HelloRetryRequest. A es INDETERMINADO.
+                               (medido en www.bbva.es, 12/10/2026)
+   · A y C clasicos         -> rechaza PQC teniendolo disponible: INSEGURO.
+   · HelloRetryRequest      -> exige ese grupo: soporte confirmado.
+### www.amazon.es — 2026-11-18T08:55:25+01:00
+==============================================================================
+  www.amazon.es
+==============================================================================
+  Version negociada: TLS 1.3
+
+  A  PQC en supported_groups, key_share solo clasico
+     ClientHello = 193 B (1 segmento)
+     ServerHello: grupo elegido x25519 (0x001D), key_exchange = 32 B  [longitud conforme a RFC 10024]
+     -> INDETERMINADO (pudo evitar el HelloRetryRequest)
+
+  B  cliente puramente clasico
+     ClientHello = 191 B (1 segmento)
+     ServerHello: grupo elegido x25519 (0x001D), key_exchange = 32 B  [longitud conforme a RFC 10024]
+     -> NO INFORMATIVO (el cliente no ofrecio PQC)
+
+  C  PQC en supported_groups Y key_share postcuantico
+     ClientHello = 1413 B (1 segmento)
+     ServerHello: grupo elegido X25519MLKEM768 (0x11EC), key_exchange = 1120 B  [longitud conforme a RFC 10024]
+     -> SEGURO
+
+  Como leer esto:
+   · C elige PQC            -> servidor SEGURO, sin ambiguedad.
+   · A clasico pero C PQC   -> el servidor soporta PQC pero evita el
+                               HelloRetryRequest. A es INDETERMINADO.
+                               (medido en www.bbva.es, 12/10/2026)
+   · A y C clasicos         -> rechaza PQC teniendolo disponible: INSEGURO.
+   · HelloRetryRequest      -> exige ese grupo: soporte confirmado.
+### www.elpais.com — 2026-11-18T08:55:25+01:00
+==============================================================================
+  www.elpais.com
+==============================================================================
+  Version negociada: TLS 1.2
+  -> INSEGURO: sin TLS 1.3 no existe intercambio de claves
+     postcuantico. Los grupos hibridos de la RFC 10024 solo
+     estan definidos para TLS 1.3.
+
+### www.caixabank.es — 2026-11-18T08:55:26+01:00
+==============================================================================
+  www.caixabank.es
+==============================================================================
+  Version negociada: TLS 1.3
+
+  A  PQC en supported_groups, key_share solo clasico
+     ClientHello = 196 B (1 segmento)
+     HelloRetryRequest: el servidor EXIGE X25519MLKEM768 (0x11EC)
+     -> SEGURO
+
+  B  cliente puramente clasico
+     ClientHello = 194 B (1 segmento)
+     ServerHello: grupo elegido x25519 (0x001D), key_exchange = 32 B  [longitud conforme a RFC 10024]
+     -> NO INFORMATIVO (el cliente no ofrecio PQC)
+
+  C  PQC en supported_groups Y key_share postcuantico
+     ClientHello = 1416 B (1 segmento)
+     ServerHello: grupo elegido X25519MLKEM768 (0x11EC), key_exchange = 1120 B  [longitud conforme a RFC 10024]
+     -> SEGURO
+
+  Como leer esto:
+   · C elige PQC            -> servidor SEGURO, sin ambiguedad.
+   · A clasico pero C PQC   -> el servidor soporta PQC pero evita el
+                               HelloRetryRequest. A es INDETERMINADO.
+                               (medido en www.bbva.es, 12/10/2026)
+   · A y C clasicos         -> rechaza PQC teniendolo disponible: INSEGURO.
+   · HelloRetryRequest      -> exige ese grupo: soporte confirmado.
+### www.bbva.es — 2026-11-18T08:55:26+01:00
+==============================================================================
+  www.bbva.es
+==============================================================================
+  Version negociada: TLS 1.3
+
+  A  PQC en supported_groups, key_share solo clasico
+     ClientHello = 191 B (1 segmento)
+     ServerHello: grupo elegido x25519 (0x001D), key_exchange = 32 B  [longitud conforme a RFC 10024]
+     -> INDETERMINADO (pudo evitar el HelloRetryRequest)
+
+  B  cliente puramente clasico
+     ClientHello = 189 B (1 segmento)
+     ServerHello: grupo elegido x25519 (0x001D), key_exchange = 32 B  [longitud conforme a RFC 10024]
+     -> NO INFORMATIVO (el cliente no ofrecio PQC)
+
+  C  PQC en supported_groups Y key_share postcuantico
+     ClientHello = 1411 B (1 segmento)
+     ServerHello: grupo elegido X25519MLKEM768 (0x11EC), key_exchange = 1120 B  [longitud conforme a RFC 10024]
+     -> SEGURO
+
+  Como leer esto:
+   · C elige PQC            -> servidor SEGURO, sin ambiguedad.
+   · A clasico pero C PQC   -> el servidor soporta PQC pero evita el
+                               HelloRetryRequest. A es INDETERMINADO.
+                               (medido en www.bbva.es, 12/10/2026)
+   · A y C clasicos         -> rechaza PQC teniendolo disponible: INSEGURO.
+   · HelloRetryRequest      -> exige ese grupo: soporte confirmado.
+### www.santander.es — 2026-11-18T08:55:26+01:00
+==============================================================================
+  www.santander.es
+==============================================================================
+  Version negociada: TLS 1.3
+
+  A  PQC en supported_groups, key_share solo clasico
+     ClientHello = 196 B (1 segmento)
+     ServerHello: grupo elegido x25519 (0x001D), key_exchange = 32 B  [longitud conforme a RFC 10024]
+     -> INDETERMINADO (pudo evitar el HelloRetryRequest)
+
+  B  cliente puramente clasico
+     ClientHello = 194 B (1 segmento)
+     ServerHello: grupo elegido x25519 (0x001D), key_exchange = 32 B  [longitud conforme a RFC 10024]
+     -> NO INFORMATIVO (el cliente no ofrecio PQC)
+
+  C  PQC en supported_groups Y key_share postcuantico
+     ClientHello = 1416 B (1 segmento)
+     ServerHello: grupo elegido x25519 (0x001D), key_exchange = 32 B  [longitud conforme a RFC 10024]
+     -> INSEGURO
+
+  Como leer esto:
+   · C elige PQC            -> servidor SEGURO, sin ambiguedad.
+   · A clasico pero C PQC   -> el servidor soporta PQC pero evita el
+                               HelloRetryRequest. A es INDETERMINADO.
+                               (medido en www.bbva.es, 12/10/2026)
+   · A y C clasicos         -> rechaza PQC teniendolo disponible: INSEGURO.
+   · HelloRetryRequest      -> exige ese grupo: soporte confirmado.
+### www.ing.es — 2026-11-18T08:55:26+01:00
+==============================================================================
+  www.ing.es
+==============================================================================
+  Version negociada: TLS 1.3
+
+  A  PQC en supported_groups, key_share solo clasico
+     ClientHello = 190 B (1 segmento)
+     ServerHello: grupo elegido x25519 (0x001D), key_exchange = 32 B  [longitud conforme a RFC 10024]
+     -> INDETERMINADO (pudo evitar el HelloRetryRequest)
+
+  B  cliente puramente clasico
+     ClientHello = 188 B (1 segmento)
+     ServerHello: grupo elegido x25519 (0x001D), key_exchange = 32 B  [longitud conforme a RFC 10024]
+     -> NO INFORMATIVO (el cliente no ofrecio PQC)
+
+  C  PQC en supported_groups Y key_share postcuantico
+     ClientHello = 1410 B (1 segmento)
+     ServerHello: grupo elegido X25519MLKEM768 (0x11EC), key_exchange = 1120 B  [longitud conforme a RFC 10024]
+     -> SEGURO
+
+  Como leer esto:
+   · C elige PQC            -> servidor SEGURO, sin ambiguedad.
+   · A clasico pero C PQC   -> el servidor soporta PQC pero evita el
+                               HelloRetryRequest. A es INDETERMINADO.
+                               (medido en www.bbva.es, 12/10/2026)
+   · A y C clasicos         -> rechaza PQC teniendolo disponible: INSEGURO.
+   · HelloRetryRequest      -> exige ese grupo: soporte confirmado.
+### www.sabadell.com — 2026-11-18T08:55:26+01:00
+==============================================================================
+  www.sabadell.com
+==============================================================================
+  Version negociada: TLS 1.2
+  -> INSEGURO: sin TLS 1.3 no existe intercambio de claves
+     postcuantico. Los grupos hibridos de la RFC 10024 solo
+     estan definidos para TLS 1.3.
+
+### www.uam.es — 2026-11-18T08:55:26+01:00
+==============================================================================
+  www.uam.es
+==============================================================================
+  Version negociada: TLS 1.3
+
+  A  PQC en supported_groups, key_share solo clasico
+     ClientHello = 190 B (1 segmento)
+     ServerHello: grupo elegido x25519 (0x001D), key_exchange = 32 B  [longitud conforme a RFC 10024]
+     -> INDETERMINADO (pudo evitar el HelloRetryRequest)
+
+  B  cliente puramente clasico
+     ClientHello = 188 B (1 segmento)
+     ServerHello: grupo elegido x25519 (0x001D), key_exchange = 32 B  [longitud conforme a RFC 10024]
+     -> NO INFORMATIVO (el cliente no ofrecio PQC)
+
+  C  PQC en supported_groups Y key_share postcuantico
+     ClientHello = 1410 B (1 segmento)
+     ServerHello: grupo elegido x25519 (0x001D), key_exchange = 32 B  [longitud conforme a RFC 10024]
+     -> INSEGURO
+
+  Como leer esto:
+   · C elige PQC            -> servidor SEGURO, sin ambiguedad.
+   · A clasico pero C PQC   -> el servidor soporta PQC pero evita el
+                               HelloRetryRequest. A es INDETERMINADO.
+                               (medido en www.bbva.es, 12/10/2026)
+   · A y C clasicos         -> rechaza PQC teniendolo disponible: INSEGURO.
+   · HelloRetryRequest      -> exige ese grupo: soporte confirmado.
+### www.upm.es — 2026-11-18T08:55:27+01:00
+==============================================================================
+  www.upm.es
+==============================================================================
+  Version negociada: TLS 1.3
+
+  A  PQC en supported_groups, key_share solo clasico
+     ClientHello = 190 B (1 segmento)
+     ServerHello: grupo elegido x25519 (0x001D), key_exchange = 32 B  [longitud conforme a RFC 10024]
+     -> INDETERMINADO (pudo evitar el HelloRetryRequest)
+
+  B  cliente puramente clasico
+     ClientHello = 188 B (1 segmento)
+     ServerHello: grupo elegido x25519 (0x001D), key_exchange = 32 B  [longitud conforme a RFC 10024]
+     -> NO INFORMATIVO (el cliente no ofrecio PQC)
+
+  C  PQC en supported_groups Y key_share postcuantico
+     ClientHello = 1410 B (1 segmento)
+     ServerHello: grupo elegido x25519 (0x001D), key_exchange = 32 B  [longitud conforme a RFC 10024]
+     -> INSEGURO
+
+  Como leer esto:
+   · C elige PQC            -> servidor SEGURO, sin ambiguedad.
+   · A clasico pero C PQC   -> el servidor soporta PQC pero evita el
+                               HelloRetryRequest. A es INDETERMINADO.
+                               (medido en www.bbva.es, 12/10/2026)
+   · A y C clasicos         -> rechaza PQC teniendolo disponible: INSEGURO.
+   · HelloRetryRequest      -> exige ese grupo: soporte confirmado.
+### www.uc3m.es — 2026-11-18T08:55:27+01:00
+==============================================================================
+  www.uc3m.es
+==============================================================================
+  Version negociada: TLS 1.2
+  -> INSEGURO: sin TLS 1.3 no existe intercambio de claves
+     postcuantico. Los grupos hibridos de la RFC 10024 solo
+     estan definidos para TLS 1.3.
+
+### www.ucm.es — 2026-11-18T08:55:27+01:00
+==============================================================================
+  www.ucm.es
+==============================================================================
+  Version negociada: TLS 1.3
+
+  A  PQC en supported_groups, key_share solo clasico
+     ClientHello = 190 B (1 segmento)
+     ServerHello: grupo elegido x25519 (0x001D), key_exchange = 32 B  [longitud conforme a RFC 10024]
+     -> INDETERMINADO (pudo evitar el HelloRetryRequest)
+
+  B  cliente puramente clasico
+     ClientHello = 188 B (1 segmento)
+     ServerHello: grupo elegido x25519 (0x001D), key_exchange = 32 B  [longitud conforme a RFC 10024]
+     -> NO INFORMATIVO (el cliente no ofrecio PQC)
+
+  C  PQC en supported_groups Y key_share postcuantico
+     ClientHello = 1410 B (1 segmento)
+     ServerHello: grupo elegido x25519 (0x001D), key_exchange = 32 B  [longitud conforme a RFC 10024]
+     -> INSEGURO
+
+  Como leer esto:
+   · C elige PQC            -> servidor SEGURO, sin ambiguedad.
+   · A clasico pero C PQC   -> el servidor soporta PQC pero evita el
+                               HelloRetryRequest. A es INDETERMINADO.
+                               (medido en www.bbva.es, 12/10/2026)
+   · A y C clasicos         -> rechaza PQC teniendolo disponible: INSEGURO.
+   · HelloRetryRequest      -> exige ese grupo: soporte confirmado.
+### www.boe.es — 2026-11-18T08:55:27+01:00
+==============================================================================
+  www.boe.es
+==============================================================================
+  Version negociada: TLS 1.3
+
+  A  PQC en supported_groups, key_share solo clasico
+     ClientHello = 190 B (1 segmento)
+     ServerHello: grupo elegido x25519 (0x001D), key_exchange = 32 B  [longitud conforme a RFC 10024]
+     -> INDETERMINADO (pudo evitar el HelloRetryRequest)
+
+  B  cliente puramente clasico
+     ClientHello = 188 B (1 segmento)
+     ServerHello: grupo elegido x25519 (0x001D), key_exchange = 32 B  [longitud conforme a RFC 10024]
+     -> NO INFORMATIVO (el cliente no ofrecio PQC)
+
+  C  PQC en supported_groups Y key_share postcuantico
+     ClientHello = 1410 B (1 segmento)
+     ServerHello: grupo elegido x25519 (0x001D), key_exchange = 32 B  [longitud conforme a RFC 10024]
+     -> INSEGURO
+
+  Como leer esto:
+   · C elige PQC            -> servidor SEGURO, sin ambiguedad.
+   · A clasico pero C PQC   -> el servidor soporta PQC pero evita el
+                               HelloRetryRequest. A es INDETERMINADO.
+                               (medido en www.bbva.es, 12/10/2026)
+   · A y C clasicos         -> rechaza PQC teniendolo disponible: INSEGURO.
+   · HelloRetryRequest      -> exige ese grupo: soporte confirmado.
+### sede.administracion.gob.es — 2026-11-18T08:55:27+01:00
+==============================================================================
+  sede.administracion.gob.es
+==============================================================================
+  Version negociada: TLS 1.3
+
+  A  PQC en supported_groups, key_share solo clasico
+     ClientHello = 206 B (1 segmento)
+     HelloRetryRequest: el servidor EXIGE X25519MLKEM768 (0x11EC)
+     -> SEGURO
+
+  B  cliente puramente clasico
+     ClientHello = 204 B (1 segmento)
+     ServerHello: grupo elegido x25519 (0x001D), key_exchange = 32 B  [longitud conforme a RFC 10024]
+     -> NO INFORMATIVO (el cliente no ofrecio PQC)
+
+  C  PQC en supported_groups Y key_share postcuantico
+     ClientHello = 1426 B (1 segmento)
+     ServerHello: grupo elegido X25519MLKEM768 (0x11EC), key_exchange = 1120 B  [longitud conforme a RFC 10024]
+     -> SEGURO
+
+  Como leer esto:
+   · C elige PQC            -> servidor SEGURO, sin ambiguedad.
+   · A clasico pero C PQC   -> el servidor soporta PQC pero evita el
+                               HelloRetryRequest. A es INDETERMINADO.
+                               (medido en www.bbva.es, 12/10/2026)
+   · A y C clasicos         -> rechaza PQC teniendolo disponible: INSEGURO.
+   · HelloRetryRequest      -> exige ese grupo: soporte confirmado.
+### www.seg-social.es — 2026-11-18T08:55:27+01:00
+==============================================================================
+  www.seg-social.es
+==============================================================================
+  Version negociada: TLS 1.3
+
+  A  PQC en supported_groups, key_share solo clasico
+     ClientHello = 197 B (1 segmento)
+     ServerHello: grupo elegido x25519 (0x001D), key_exchange = 32 B  [longitud conforme a RFC 10024]
+     -> INDETERMINADO (pudo evitar el HelloRetryRequest)
+
+  B  cliente puramente clasico
+     ClientHello = 195 B (1 segmento)
+     ServerHello: grupo elegido x25519 (0x001D), key_exchange = 32 B  [longitud conforme a RFC 10024]
+     -> NO INFORMATIVO (el cliente no ofrecio PQC)
+
+  C  PQC en supported_groups Y key_share postcuantico
+     ClientHello = 1417 B (1 segmento)
+     ServerHello: grupo elegido X25519MLKEM768 (0x11EC), key_exchange = 1120 B  [longitud conforme a RFC 10024]
+     -> SEGURO
+
+  Como leer esto:
+   · C elige PQC            -> servidor SEGURO, sin ambiguedad.
+   · A clasico pero C PQC   -> el servidor soporta PQC pero evita el
+                               HelloRetryRequest. A es INDETERMINADO.
+                               (medido en www.bbva.es, 12/10/2026)
+   · A y C clasicos         -> rechaza PQC teniendolo disponible: INSEGURO.
+   · HelloRetryRequest      -> exige ese grupo: soporte confirmado.
+### www.renfe.com — 2026-11-18T08:55:28+01:00
+==============================================================================
+  www.renfe.com
+==============================================================================
+  Version negociada: TLS 1.3
+
+  A  PQC en supported_groups, key_share solo clasico
+     ClientHello = 193 B (1 segmento)
+     ServerHello: grupo elegido x25519 (0x001D), key_exchange = 32 B  [longitud conforme a RFC 10024]
+     -> INDETERMINADO (pudo evitar el HelloRetryRequest)
+
+  B  cliente puramente clasico
+     ClientHello = 191 B (1 segmento)
+     ServerHello: grupo elegido x25519 (0x001D), key_exchange = 32 B  [longitud conforme a RFC 10024]
+     -> NO INFORMATIVO (el cliente no ofrecio PQC)
+
+  C  PQC en supported_groups Y key_share postcuantico
+     ClientHello = 1413 B (1 segmento)
+     ServerHello: grupo elegido X25519MLKEM768 (0x11EC), key_exchange = 1120 B  [longitud conforme a RFC 10024]
+     -> SEGURO
+
+  Como leer esto:
+   · C elige PQC            -> servidor SEGURO, sin ambiguedad.
+   · A clasico pero C PQC   -> el servidor soporta PQC pero evita el
+                               HelloRetryRequest. A es INDETERMINADO.
+                               (medido en www.bbva.es, 12/10/2026)
+   · A y C clasicos         -> rechaza PQC teniendolo disponible: INSEGURO.
+   · HelloRetryRequest      -> exige ese grupo: soporte confirmado.
+### www.correos.es — 2026-11-18T08:55:28+01:00
+==============================================================================
+  www.correos.es
+==============================================================================
+  Version negociada: TLS 1.3
+
+  A  PQC en supported_groups, key_share solo clasico
+     ClientHello = 194 B (1 segmento)
+     HelloRetryRequest: el servidor EXIGE X25519MLKEM768 (0x11EC)
+     -> SEGURO
+
+  B  cliente puramente clasico
+     ClientHello = 192 B (1 segmento)
+     ServerHello: grupo elegido x25519 (0x001D), key_exchange = 32 B  [longitud conforme a RFC 10024]
+     -> NO INFORMATIVO (el cliente no ofrecio PQC)
+
+  C  PQC en supported_groups Y key_share postcuantico
+     ClientHello = 1414 B (1 segmento)
+     ServerHello: grupo elegido X25519MLKEM768 (0x11EC), key_exchange = 1120 B  [longitud conforme a RFC 10024]
+     -> SEGURO
+
+  Como leer esto:
+   · C elige PQC            -> servidor SEGURO, sin ambiguedad.
+   · A clasico pero C PQC   -> el servidor soporta PQC pero evita el
+                               HelloRetryRequest. A es INDETERMINADO.
+                               (medido en www.bbva.es, 12/10/2026)
+   · A y C clasicos         -> rechaza PQC teniendolo disponible: INSEGURO.
+   · HelloRetryRequest      -> exige ese grupo: soporte confirmado.
+### www.movistar.es — 2026-11-18T08:55:28+01:00
+==============================================================================
+  www.movistar.es
+==============================================================================
+  Version negociada: TLS 1.2
+  -> INSEGURO: sin TLS 1.3 no existe intercambio de claves
+     postcuantico. Los grupos hibridos de la RFC 10024 solo
+     estan definidos para TLS 1.3.
+
+### www.idealista.com — 2026-11-18T08:55:28+01:00
+==============================================================================
+  www.idealista.com
+==============================================================================
+  Version negociada: TLS 1.3
+
+  A  PQC en supported_groups, key_share solo clasico
+     ClientHello = 197 B (1 segmento)
+     ServerHello: grupo elegido x25519 (0x001D), key_exchange = 32 B  [longitud conforme a RFC 10024]
+     -> INDETERMINADO (pudo evitar el HelloRetryRequest)
+
+  B  cliente puramente clasico
+     ClientHello = 195 B (1 segmento)
+     ServerHello: grupo elegido x25519 (0x001D), key_exchange = 32 B  [longitud conforme a RFC 10024]
+     -> NO INFORMATIVO (el cliente no ofrecio PQC)
+
+  C  PQC en supported_groups Y key_share postcuantico
+     ClientHello = 1417 B (1 segmento)
+     ServerHello: grupo elegido X25519MLKEM768 (0x11EC), key_exchange = 1120 B  [longitud conforme a RFC 10024]
+     -> SEGURO
+
+  Como leer esto:
+   · C elige PQC            -> servidor SEGURO, sin ambiguedad.
+   · A clasico pero C PQC   -> el servidor soporta PQC pero evita el
+                               HelloRetryRequest. A es INDETERMINADO.
+                               (medido en www.bbva.es, 12/10/2026)
+   · A y C clasicos         -> rechaza PQC teniendolo disponible: INSEGURO.
+   · HelloRetryRequest      -> exige ese grupo: soporte confirmado.

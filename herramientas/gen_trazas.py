@@ -190,7 +190,10 @@ def caso_rechazo(n, sni, grupos, claves, respuesta, ipv6=False):
        ("alerta", codigo)  Alert fatal con ese codigo (40 = handshake_failure)
        ("fin",)            cierra con FIN sin mandar nada
        ("rst",)            cierra con RST
-       ("nada",)           no contesta (la captura acaba antes)"""
+       ("nada",)           no contesta (la captura acaba antes)
+       ("hrr", grupo)      HelloRetryRequest pidiendo ese grupo; el cliente
+                           no manda el segundo ClientHello y cierra (como
+                           una sonda activa que solo lee la primera respuesta)"""
     cli, srv = f"10.1.{n >> 8 & 255}.{n & 255}", f"203.0.113.{n % 200 + 1}"
     con = Conexion(cli, srv, 41000 + n, mss=1460)
     con.handshake_tcp()
@@ -202,6 +205,9 @@ def caso_rechazo(n, sni, grupos, claves, respuesta, ipv6=False):
         con.cerrar_servidor()
     elif respuesta[0] == "rst":
         con.cerrar_servidor(rst=True)
+    elif respuesta[0] == "hrr":
+        con.enviar(False, registro(0x16, server_hello(respuesta[1], hrr=True)))
+        con.cerrar()
     return con.paquetes
 
 
@@ -216,6 +222,9 @@ CASOS_RECHAZO = [
     ("r5-fin-normal.es",       [X25519MLKEM768, X25519], [X25519MLKEM768, X25519], ("fin",)),         # [indeterminado]
     # No contesta nada
     ("r6-sin-respuesta.es",    [X25519MLKEM768], [X25519MLKEM768], ("nada",)),        # [indeterminado]
+    # HelloRetryRequest al que el cliente no sigue
+    ("r7-hrr-pq-abandonado.es",      [X25519MLKEM768, X25519, P256], [X25519], ("hrr", X25519MLKEM768)),  # [fuerza_pq]
+    ("r8-hrr-clasico-abandonado.es", [X25519MLKEM768, X25519, P256], [X25519MLKEM768, X25519], ("hrr", P256)),  # [inseguro]
 ]
 
 
