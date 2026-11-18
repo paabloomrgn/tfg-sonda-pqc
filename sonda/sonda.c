@@ -7,7 +7,8 @@
  *
  * BLOQUE 1: captura y diseccion hasta la capa IP (Ethernet, VLAN, Linux
  *           SLL/SLL2, loopback y RAW; IPv4 e IPv6).
- * BLOQUE 2: diseccion de la cabecera TCP y filtro por puerto.
+ * BLOQUE 2: diseccion de la cabecera TCP y filtro por puertos (uno, una
+ *           lista, los de TLS implicito con -p tls, o todos con -p all).
  * BLOQUE 3: tabla de flujos y reensamblado TCP de los registros TLS
  *           del inicio de cada sentido.
  * BLOQUE 4: lectura de ClientHello / HelloRetryRequest / ServerHello
@@ -344,7 +345,7 @@ static struct {
     uint64_t udp;
     uint64_t otros_proto;
     uint64_t tcp_malformados;
-    uint64_t tcp_puerto;        /* segmentos del puerto analizado            */
+    uint64_t tcp_puerto;        /* segmentos de los puertos analizados        */
     uint64_t tcp_con_datos;     /*   ... que llevan datos                    */
     uint64_t tcp_tls_hs;        /*   ... que empiezan por un registro TLS    */
     uint64_t bytes_datos;
@@ -370,7 +371,53 @@ static struct {
 
 static int verbose = 0;
 static int modo_texto = 0;      /* -t: texto legible en lugar de JSON      */
-static uint16_t puerto = 443;   /* puerto TCP a analizar (-p)              */
+/* Puertos a analizar (-p). Un bit por puerto: mirar si un puerto esta en
+ * la lista es inmediato, sea cual sea su tamano.                          */
+static uint8_t  puertos[65536 / 8];
+static int      todos_puertos = 0;      /* -p all: cualquier puerto       */
+static char     texto_puertos[256] = "443";
+
+static int puerto_activo(uint16_t p) { return todos_puertos || (puertos[p >> 3] >> (p & 7) & 1); }
+static void activar_puerto(uint16_t p) { puertos[p >> 3] |= (uint8_t)(1u << (p & 7)); }
+
+/* Puertos con TLS implicito: la conexion empieza directamente con el
+ * ClientHello, igual que HTTPS. Los de STARTTLS (25, 587, 143, 110...) no
+ * estan: alli TLS empieza despues de un dialogo en claro.                 */
+static const struct { uint16_t puerto; const char *servicio; } PUERTOS_TLS[] = {
+    {443, "https"}, {465, "smtps"}, {563, "nntps"}, {636, "ldaps"},
+    {853, "dns-over-tls"}, {989, "ftps-data"}, {990, "ftps"}, {992, "telnets"},
+    {993, "imaps"}, {994, "ircs"}, {995, "pop3s"}, {5061, "sip-tls"},
+    {5223, "xmpp-tls"}, {5671, "amqps"}, {6697, "ircs"}, {8443, "https-alt"},
+    {8883, "mqtts"}, {9093, "kafka-tls"}
+};
+#define N_PUERTOS_TLS (sizeof PUERTOS_TLS / sizeof PUERTOS_TLS[0])
+
+static const char *nombre_servicio(uint16_t p)
+{
+    for (size_t i = 0; i < N_PUERTOS_TLS; i++)
+        if (PUERTOS_TLS[i].puerto == p) return PUERTOS_TLS[i].servicio;
+    return NULL;
+}
+
+/* Lee la opcion -p: "443", "443,993,8443", "8000-8100", "tls", "all" o
+ * combinaciones ("tls,8080"). Devuelve -1 si algo no es valido.          */
+static int leer_puertos(const char *arg)
+{
+    char copia[256];
+    snprintf(copia, sizeof copia, "%s", arg);
+    snprintf(texto_puertos, sizeof texto_puertos, "%s", arg);
+    memset(puertos, 0, sizeof puertos);
+    for (char *t = strtok(copia, ","); t; t = strtok(NULL, ",")) {
+        if (!strcmp(t, "all"))  { todos_puertos = 1; continue; }
+        if (!strcmp(t, "tls"))  { for (size_t i = 0; i < N_PUERTOS_TLS; i++) activar_puerto(PUERTOS_TLS[i].puerto); continue; }
+        char *fin;
+        long a = strtol(t, &fin, 10), b = a;
+        if (*fin == '-') b = strtol(fin + 1, &fin, 10);
+        if (*fin || a < 1 || b > 65535 || a > b) return -1;
+        for (long p = a; p <= b; p++) activar_puerto((uint16_t)p);
+    }
+    return 0;
+}
 static const char *fichero_grupos = "grupos_pqc.csv";   /* -g              */
 static FILE *salida;            /* JSON o texto (stdout o -o fichero)      */
 static FILE *info;              /* mensajes y resumen: stderr con JSON     */
@@ -1012,7 +1059,9 @@ static void j_conexion(const struct flujo *f, const struct veredicto *v,
     j_ip(f->ipv, ipc);
     fprintf(salida, ",\"client_port\":%u,\"server_ip\":", pc);
     j_ip(f->ipv, ips);
-    fprintf(salida, ",\"server_port\":%u,\"server_name\":", ps);
+    fprintf(salida, ",\"server_port\":%u,\"service\":", ps);
+    if (nombre_servicio(ps)) fprintf(salida, "\"%s\"", nombre_servicio(ps)); else fprintf(salida, "null");
+    fprintf(salida, ",\"server_name\":");
     if (ch->sni[0]) j_str(ch->sni); else fprintf(salida, "null");
     fprintf(salida, ",\"version_offered\":\"%s\"", ch->ofrece_tls13 ? "TLS 1.3" : "TLS 1.2");
     if (f->hay_sh) fprintf(salida, ",\"version\":\"%s\"", texto_version(f->sh.version));
@@ -1615,8 +1664,10 @@ static void analizar_paquete(u_char *user,
     uint16_t sport = ntohs(tcp->sport);
     uint16_t dport = ntohs(tcp->dport);
 
-    /* Filtro de puerto: nos vale en cualquiera de los dos sentidos */
-    if (sport != puerto && dport != puerto) return;
+    /* Filtro de puertos: nos vale en cualquiera de los dos sentidos. Con
+     * -p all no se filtra: se reconoce TLS por el contenido (el primer
+     * registro de cada sentido tiene que empezar por 0x16 0x03).          */
+    if (!puerto_activo(sport) && !puerto_activo(dport)) return;
     est.tcp_puerto++;
 
     /* Datos de aplicacion: lo que queda tras la cabecera TCP, medido con
@@ -1754,7 +1805,7 @@ static void imprimir_resumen(void)
     fprintf(o, "      TCP ...................... %" PRIu64 "\n", est.tcp);
     fprintf(o, "      UDP ...................... %" PRIu64 "\n", est.udp);
     fprintf(o, "      otros protocolos ......... %" PRIu64 "\n", est.otros_proto);
-    fprintf(o, "  TCP puerto %u\n", puerto);
+    fprintf(o, "  TCP puertos %s\n", todos_puertos ? "todos" : texto_puertos);
     fprintf(o, "    segmentos .................. %" PRIu64 "\n", est.tcp_puerto);
     fprintf(o, "      con datos ................ %" PRIu64 "  (%" PRIu64 " bytes)\n",
             est.tcp_con_datos, est.bytes_datos);
@@ -1793,11 +1844,13 @@ static void imprimir_resumen(void)
 static void uso(const char *prog)
 {
     fprintf(stderr,
-            "Uso: %s (-f traza.pcap | -i interfaz) [-p puerto] [-g grupos.csv]\n"
+            "Uso: %s (-f traza.pcap | -i interfaz) [-p puertos] [-g grupos.csv]\n"
             "          [-o salida.ndjson] [-t] [-v]\n"
             "  -f  leer de un fichero pcap o pcapng\n"
             "  -i  capturar de una interfaz (requiere privilegios; 'any' = todas)\n"
-            "  -p  puerto TCP a analizar (por defecto 443)\n"
+            "  -p  puertos TCP: 443 (por defecto), una lista (443,993,8000-8100),\n"
+            "      tls (los de TLS implicito: 443, 465, 636, 853, 993, 995, 8443...)\n"
+            "      o all (cualquier puerto; TLS se reconoce por el contenido)\n"
             "  -g  tabla de grupos (por defecto grupos_pqc.csv)\n"
             "  -o  escribir la salida en un fichero (por defecto, la pantalla)\n"
             "  -t  salida en texto legible en lugar de JSON\n"
@@ -1813,6 +1866,7 @@ int main(int argc, char **argv)
     const char *fichero = NULL, *interfaz = NULL, *fichero_salida = NULL;
     int opt;
 
+    activar_puerto(443);       /* por defecto, solo HTTPS */
     while ((opt = getopt(argc, argv, "f:i:p:g:o:tvh")) != -1) {
         switch (opt) {
             case 'f': fichero  = optarg; break;
@@ -1820,12 +1874,9 @@ int main(int argc, char **argv)
             case 'i': interfaz = optarg; break;
             case 'o': fichero_salida = optarg; break;
             case 't': modo_texto = 1; break;
-            case 'p': {
-                long v = strtol(optarg, NULL, 10);
-                if (v < 1 || v > 65535) { fprintf(stderr, "Puerto no valido\n"); return 1; }
-                puerto = (uint16_t)v;
+            case 'p':
+                if (leer_puertos(optarg) != 0) { fprintf(stderr, "Puertos no validos: %s\n", optarg); return 1; }
                 break;
-            }
             case 'v': verbose = 1; break;
             default:  uso(argv[0]); return 1;
         }
@@ -1874,9 +1925,19 @@ int main(int argc, char **argv)
 
         /* Filtro BPF en el nucleo: solo llegan a la sonda los segmentos
          * del puerto, en lugar de todo el trafico de la interfaz.         */
-        char filtro[96];
+        char lista[2048] = "", filtro[4400];
         struct bpf_program bpf;
-        snprintf(filtro, sizeof filtro, "tcp port %u or (vlan and tcp port %u)", puerto, puerto);
+        int n = 0;
+        for (uint32_t p = 1; p < 65536 && !todos_puertos; p++) {
+            if (!puerto_activo((uint16_t)p)) continue;
+            if (++n > 200) break;          /* rango muy grande: sin filtro de puerto */
+            size_t l = strlen(lista);
+            snprintf(lista + l, sizeof lista - l, "%sport %u", l ? " or " : "", p);
+        }
+        if (todos_puertos || n > 200)
+            snprintf(filtro, sizeof filtro, "tcp or (vlan and tcp)");
+        else
+            snprintf(filtro, sizeof filtro, "(tcp and (%s)) or (vlan and tcp and (%s))", lista, lista);
         if (pcap_compile(descr, &bpf, filtro, 1, PCAP_NETMASK_UNKNOWN) == 0) {
             if (pcap_setfilter(descr, &bpf) != 0)
                 fprintf(stderr, "Aviso: no se pudo aplicar el filtro: %s\n", pcap_geterr(descr));

@@ -16,6 +16,8 @@ Genera:
     casos_clasificacion.pcap      un caso por cada situacion de clasificacion
     casos_ipv6.pcap               los mismos casos sobre IPv6, uno de ellos
                                   con una cabecera de extension (hop-by-hop)
+    casos_puertos.pcap            el mismo handshake en varios puertos de TLS
+                                  implicito, mas trafico en claro (HTTP, SMTP)
     casos_rechazo.pcap            el servidor no contesta con ServerHello:
                                   Alert, FIN, RST o nada
     reensamblado_desordenado.pcap ClientHello en 3 segmentos, desordenado y
@@ -160,13 +162,13 @@ class Conexion:
 
 # ------------------------------------------------------------ casos
 def caso(n, sni, grupos, claves, elegido, hrr=False, servidor_tls12=False, mss=1460,
-         ipv6=False, hop_by_hop=False):
+         ipv6=False, hop_by_hop=False, puerto=443):
     """Una conexion completa. n distingue IP y puerto del cliente."""
     if ipv6:   # 2001:db8::/32 es el prefijo reservado para documentacion
         cli, srv = f"2001:db8:c::{n:x}", f"2001:db8:5::{n % 200 + 1:x}"
     else:
         cli, srv = f"10.0.{n >> 8 & 255}.{n & 255}", f"198.51.100.{n % 200 + 1}"
-    con = Conexion(cli, srv, 40000 + n % 20000, mss=mss, hop_by_hop=hop_by_hop)
+    con = Conexion(cli, srv, 40000 + n % 20000, puerto_servidor=puerto, mss=mss, hop_by_hop=hop_by_hop)
     con.handshake_tcp()
     con.enviar(True, registro(0x16, client_hello(sni, grupos, claves), version=0x0301))
     if hrr:   # el servidor pide un grupo (X25519MLKEM768 si hrr=True); el cliente
@@ -273,6 +275,38 @@ def traza_casos_rechazo():
     return poner_tiempos(pk)
 
 
+# Puerto, servicio y que elige el servidor (todos con un cliente tipo Chrome)
+CASOS_PUERTOS = [
+    (443,  "https",        X25519MLKEM768),
+    (465,  "smtps",        X25519),
+    (993,  "imaps",        X25519),
+    (995,  "pop3s",        X25519MLKEM768),
+    (853,  "dns-over-tls", X25519MLKEM768),
+    (8443, "https-alt",    X25519),
+]
+
+
+def texto_en_claro(n, puerto, cliente, servidor):
+    """Una conexion TCP con datos que no son TLS (HTTP o SMTP)"""
+    con = Conexion(f"10.2.0.{n}", f"192.0.2.{n}", 42000 + n, puerto_servidor=puerto)
+    con.handshake_tcp()
+    if servidor:                       # SMTP: el servidor habla primero
+        con.enviar(False, servidor)
+    con.enviar(True, cliente)
+    con.cerrar()
+    return con.paquetes
+
+
+def traza_casos_puertos():
+    pk = []
+    for i, (puerto, servicio, elige) in enumerate(CASOS_PUERTOS, start=1):
+        pk += caso(100 + i, f"p{puerto}-{servicio}.es", [GREASE, X25519MLKEM768, X25519, P256],
+                   [GREASE, X25519MLKEM768, X25519], elige, puerto=puerto)
+    pk += texto_en_claro(1, 80, b"GET / HTTP/1.1\r\nHost: ejemplo.es\r\n\r\n", None)
+    pk += texto_en_claro(2, 25, b"EHLO cliente.es\r\n", b"220 correo.ejemplo.es ESMTP\r\n")
+    return poner_tiempos(pk)
+
+
 def traza_desordenada():
     con = Conexion("10.0.0.2", "104.16.123.96", 51515, mss=600)
     con.handshake_tcp()
@@ -302,6 +336,7 @@ def main():
     for nombre, pk in [("casos_clasificacion.pcap", traza_casos()),
                        ("casos_ipv6.pcap", traza_casos_ipv6()),
                        ("casos_rechazo.pcap", traza_casos_rechazo()),
+                       ("casos_puertos.pcap", traza_casos_puertos()),
                        ("reensamblado_desordenado.pcap", traza_desordenada()),
                        ("rendimiento.pcap", traza_rendimiento(n_rend))]:
         ruta = os.path.join(salida, nombre)

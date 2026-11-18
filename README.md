@@ -26,13 +26,14 @@ gcc -Wall -Wextra -std=gnu11 -O2 -o sonda sonda.c -lpcap
 
 ./sonda -f ../trazas/casos_clasificacion.pcap -t          # texto legible
 ./sonda -f traza.pcap -o ../medidas/salida.ndjson         # NDJSON a fichero
+./sonda -f traza.pcap -p tls                              # todos los puertos de TLS implicito
 sudo ./sonda -i eth0                                      # en vivo
 ```
 
 | Opción | Uso |
 |---|---|
 | `-f` / `-i` | Fichero pcap/pcapng o interfaz (`any` = todas) |
-| `-p` | Puerto TCP (443 por defecto) |
+| `-p` | Puertos TCP: 443 por defecto; lista (`443,993,8000-8100`), `tls` (los 18 de TLS implícito) o `all` |
 | `-g` | Tabla de grupos (`grupos_pqc.csv` por defecto) |
 | `-o` | Fichero de salida |
 | `-t` | Texto en lugar de JSON |
@@ -46,6 +47,8 @@ sudo ./sonda -i eth0                                      # en vivo
 **Comprobación rápida:** `casos_clasificacion.pcap` tiene 7 casos y debe dar `soporta_pq`, `indeterminado`, `fuerza_pq`, `inseguro`, `indeterminado`, `inseguro`, `inseguro`.
 
 `casos_rechazo.pcap` (el servidor no responde con un ServerHello) tiene 8 casos: el resumen debe dar `rechazada 5 | incompleta 2 | sin respuesta 1`.
+
+`casos_puertos.pcap` (TLS en 443, 465, 993, 995, 853 y 8443, más HTTP y SMTP en claro): 1 conexión sin `-p`, 6 con `-p tls` o `-p all`.
 
 ## Documentación por tareas
 
@@ -71,4 +74,5 @@ sudo ./sonda -i eth0                                      # en vivo
 | 10/11/2026 | `Trafico_real_Chrome_y_QUIC.pdf` | Captura real con Chrome y efecto de QUIC |
 | 11/11/2026 | `Alertas_y_cierres.pdf` | Alert y cierres tras el ClientHello; contraste pasivo/activo |
 | 18/11/2026 | `Bateria_activa_y_sonda_pasiva.pdf` | Batería activa (variantes A/B/C) frente a la sonda pasiva en 20 dominios |
+| 18/11/2026 | `Otros_puertos_TLS.pdf` | Varios puertos (`-p tls`, `-p all`); PQ en correo y DNS sobre TLS |
 | — | `Guia_captura_trafico_real.md` | Cómo capturar tráfico real |
