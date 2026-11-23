@@ -88,7 +88,18 @@
 
 #define STREAM_MAX  (2 * TLS_REC_MAX)    /* bytes guardados por sentido: caben
                                           dos registros (por el HelloRetryRequest) */
-#define N_CUBETAS     4096      /* tamano de la tabla hash de flujos        */
+#define N_CUBETAS     4096      /* tamano de la tabla hash de servidores    */
+/* BLOQUE 7: la tabla de flujos tiene que aguantar todas las conexiones
+ * abiertas a la vez en el enlace (decenas de miles en una red real).
+ * Con 4096 cubetas las listas se alargaban y cada busqueda era lenta.   */
+#define N_CUBETAS_FLUJOS 65536
+/* BLOQUE 7: expulsion de flujos. Un flujo sin paquetes durante
+ * INACTIVIDAD_S segundos (tiempo de la captura) se cierra: informa de lo
+ * pendiente y se libera. Asi la memoria no crece sin limite con las
+ * conexiones que terminan sin FIN/RST visibles. Se revisa la tabla cada
+ * REVISION_S segundos.                                                   */
+#define INACTIVIDAD_S 120
+#define REVISION_S    10
 
 /* Tipos de registro y de mensaje TLS */
 #define TLS_CCS          20     /* ChangeCipherSpec                         */
@@ -324,7 +335,7 @@ struct veredicto {
 
 static void informe(struct flujo *f);   /* definida en el BLOQUE 4 */
 
-static struct flujo *tabla[N_CUBETAS];
+static struct flujo *tabla[N_CUBETAS_FLUJOS];
 
 /* --- estado global ------------------------------------------------------ */
 static pcap_t *descr = NULL;
@@ -351,6 +362,7 @@ static struct {
     uint64_t bytes_datos;
     uint64_t flujos;
     uint64_t flujos_cerrados;   /* liberados al ver FIN en los dos sentidos o RST */
+    uint64_t flujos_expulsados; /* BLOQUE 7: liberados por inactividad          */
     uint64_t desordenados;      /* llegan antes que un hueco anterior        */
     uint64_t retransmisiones;   /* no aportan ningun byte nuevo              */
     uint64_t registros_completos;
@@ -376,6 +388,15 @@ static int modo_texto = 0;      /* -t: texto legible en lugar de JSON      */
 static uint8_t  puertos[65536 / 8];
 static int      todos_puertos = 0;      /* -p all: cualquier puerto       */
 static char     texto_puertos[256] = "443";
+/* BLOQUE 7: donde se filtran los puertos (-F).
+ *   bpf:    filtro BPF de libpcap. En vivo lo ejecuta el nucleo, y los
+ *           paquetes que no pasan ni se copian a la sonda. Con fichero lo
+ *           ejecuta libpcap antes de llamar a analizar_paquete.
+ *   codigo: llegan todos los paquetes y se descartan en analizar_paquete,
+ *           despues de leer Ethernet, IP y TCP (puerto_activo).
+ * Por defecto: bpf en vivo y codigo con fichero (como hasta ahora).     */
+static int      filtro_bpf = -1;        /* 1 bpf, 0 codigo, -1 por defecto */
+static char     texto_filtro[4400] = "";
 
 static int puerto_activo(uint16_t p) { return todos_puertos || (puertos[p >> 3] >> (p & 7) & 1); }
 static void activar_puerto(uint16_t p) { puertos[p >> 3] |= (uint8_t)(1u << (p & 7)); }
@@ -418,6 +439,50 @@ static int leer_puertos(const char *arg)
     }
     return 0;
 }
+/* BLOQUE 7: filtro BPF equivalente a -p. Los puertos seguidos se juntan
+ * en un "portrange", asi que cualquier lista o rango cabe en el filtro.
+ * Se repite con "vlan" porque, tras la etiqueta VLAN, "tcp" y "port" se
+ * miran 4 bytes mas adelante. Con -p all solo se pide TCP.
+ *
+ * Ojo con IPv6: las primitivas "tcp" y "port" de libpcap solo miran el
+ * Next Header de la cabecera fija. Si hay cabeceras de extension (Hop-by-
+ * Hop, Routing, Destination Options...) el paquete no pasaria, aunque la
+ * sonda si sabe recorrerlas. Por eso se dejan pasar los IPv6 cuyo Next
+ * Header no es TCP (6), UDP (17) ni ICMPv6 (58), y el codigo decide.
+ * Son muy pocos en la practica.                                          */
+#define BPF_IPV6_EXT "(ip6 and ip6[6] != 6 and ip6[6] != 17 and ip6[6] != 58)"
+static void construir_filtro(char *f, size_t n)
+{
+    if (todos_puertos) {
+        snprintf(f, n, "tcp or " BPF_IPV6_EXT " or (vlan and (tcp or " BPF_IPV6_EXT "))");
+        return;
+    }
+    char lista[2048] = "";
+    uint32_t p = 1;
+    while (p < 65536) {
+        if (!puerto_activo((uint16_t)p)) { p++; continue; }
+        uint32_t q = p;
+        while (q + 1 < 65536 && puerto_activo((uint16_t)(q + 1))) q++;
+        size_t l = strlen(lista);
+        if (l > sizeof lista - 40) {        /* lista enorme: solo TCP */
+            snprintf(f, n, "tcp or " BPF_IPV6_EXT " or (vlan and (tcp or " BPF_IPV6_EXT "))");
+            return;
+        }
+        if (q == p) snprintf(lista + l, sizeof lista - l, "%sport %u", l ? " or " : "", p);
+        else        snprintf(lista + l, sizeof lista - l, "%sportrange %u-%u", l ? " or " : "", p, q);
+        p = q + 1;
+    }
+    snprintf(f, n, "(tcp and (%s)) or " BPF_IPV6_EXT
+             " or (vlan and ((tcp and (%s)) or " BPF_IPV6_EXT "))", lista, lista);
+}
+
+static double ahora(void)
+{
+    struct timespec t;
+    clock_gettime(CLOCK_MONOTONIC, &t);
+    return (double)t.tv_sec + (double)t.tv_nsec / 1e9;
+}
+
 static const char *fichero_grupos = "grupos_pqc.csv";   /* -g              */
 static FILE *salida;            /* JSON o texto (stdout o -o fichero)      */
 static FILE *info;              /* mensajes y resumen: stderr con JSON     */
@@ -465,7 +530,7 @@ static uint32_t hash_flujo(uint8_t ipv, const uint8_t *a, const uint8_t *b,
     h = fnv(h, b, 16);
     h = fnv(h, &pa, 2);
     h = fnv(h, &pb, 2);
-    return h % N_CUBETAS;
+    return h % N_CUBETAS_FLUJOS;
 }
 
 /* Busca el flujo del paquete y devuelve en *d su sentido. Si no existe y
@@ -522,8 +587,28 @@ static void cerrar_flujo(struct flujo *f)
 
 static void liberar_flujos(void)
 {
-    for (int i = 0; i < N_CUBETAS; i++)
+    for (int i = 0; i < N_CUBETAS_FLUJOS; i++)
         while (tabla[i]) cerrar_flujo(tabla[i]);
+}
+
+/* BLOQUE 7: cierra los flujos sin actividad desde hace INACTIVIDAD_S */
+static void expulsar_inactivos(void)
+{
+    static time_t ultima_revision = 0;
+    if (ultima_revision == 0) ultima_revision = t_paquete.tv_sec;
+    if (t_paquete.tv_sec - ultima_revision < REVISION_S) return;
+    ultima_revision = t_paquete.tv_sec;
+    for (int i = 0; i < N_CUBETAS_FLUJOS; i++) {
+        struct flujo *f = tabla[i];
+        while (f) {
+            struct flujo *sig = f->sig;
+            if (t_paquete.tv_sec - f->t_ultimo.tv_sec > INACTIVIDAD_S) {
+                cerrar_flujo(f);
+                est.flujos_expulsados++;
+            }
+            f = sig;
+        }
+    }
 }
 
 /* Coloca un segmento en el buffer de su sentido.
@@ -1525,6 +1610,7 @@ static void analizar_paquete(u_char *user,
     (void)user;
     est.total++;
     t_paquete = hdr->ts;
+    expulsar_inactivos();                           /* BLOQUE 7 */
 
     size_t off = 0;                 /* desplazamiento acumulado             */
     const uint32_t caplen = hdr->caplen;
@@ -1709,7 +1795,12 @@ static void analizar_paquete(u_char *user,
     /* ================= BLOQUE 3: flujo y reensamblado ================= */
     int syn = tcp->flags & TH_SYN, ack = tcp->flags & TH_ACK;
     int d;
-    struct flujo *f = buscar_flujo(ipv, src, sport, dst, dport, &d, syn || datos_len > 0);
+    /* BLOQUE 7: sin SYN, solo se crea el flujo si el segmento empieza un
+     * registro TLS de handshake. Un segmento de datos a mitad de una
+     * conexion que no conocemos (la captura empezo con ella abierta, o se
+     * expulso por inactividad) no se podria analizar y solo gastaria memoria. */
+    int empieza_tls = datos_len >= TLS_REC_HLEN && datos[0] == TLS_HANDSHAKE && datos[1] == 0x03;
+    struct flujo *f = buscar_flujo(ipv, src, sport, dst, dport, &d, syn || empieza_tls);
     if (!f) return;
 
     /* SYN nuevo sobre un flujo que ya tenia TLS: el cliente ha reutilizado
@@ -1817,6 +1908,9 @@ static void imprimir_resumen(void)
     fprintf(o, "  Reensamblado\n");
     fprintf(o, "    flujos ..................... %" PRIu64 "  (cerrados por FIN/RST: %" PRIu64 ")\n",
             est.flujos, est.flujos_cerrados);
+    if (est.flujos_expulsados)
+        fprintf(o, "    expulsados por inactividad . %" PRIu64 "  (mas de %d s sin paquetes)\n",
+                est.flujos_expulsados, INACTIVIDAD_S);
     fprintf(o, "    segmentos desordenados ..... %" PRIu64 "\n", est.desordenados);
     fprintf(o, "    retransmisiones ............ %" PRIu64 "\n", est.retransmisiones);
     fprintf(o, "    registros TLS completos .... %" PRIu64 "\n", est.registros_completos);
@@ -1848,12 +1942,14 @@ static void uso(const char *prog)
 {
     fprintf(stderr,
             "Uso: %s (-f traza.pcap | -i interfaz) [-p puertos] [-g grupos.csv]\n"
-            "          [-o salida.ndjson] [-t] [-v]\n"
+            "          [-F bpf|codigo] [-o salida.ndjson] [-t] [-v]\n"
             "  -f  leer de un fichero pcap o pcapng\n"
             "  -i  capturar de una interfaz (requiere privilegios; 'any' = todas)\n"
             "  -p  puertos TCP: 443 (por defecto), una lista (443,993,8000-8100),\n"
             "      tls (los de TLS implicito: 443, 465, 636, 853, 993, 995, 8443...)\n"
             "      o all (cualquier puerto; TLS se reconoce por el contenido)\n"
+            "  -F  donde filtrar los puertos: bpf (filtro de libpcap; en vivo, en el\n"
+            "      nucleo) o codigo (en la sonda). Por defecto: bpf con -i, codigo con -f\n"
             "  -g  tabla de grupos (por defecto grupos_pqc.csv)\n"
             "  -o  escribir la salida en un fichero (por defecto, la pantalla)\n"
             "  -t  salida en texto legible en lugar de JSON\n"
@@ -1870,7 +1966,7 @@ int main(int argc, char **argv)
     int opt;
 
     activar_puerto(443);       /* por defecto, solo HTTPS */
-    while ((opt = getopt(argc, argv, "f:i:p:g:o:tvh")) != -1) {
+    while ((opt = getopt(argc, argv, "f:i:p:g:o:F:tvh")) != -1) {
         switch (opt) {
             case 'f': fichero  = optarg; break;
             case 'g': fichero_grupos = optarg; break;
@@ -1881,6 +1977,11 @@ int main(int argc, char **argv)
                 if (leer_puertos(optarg) != 0) { fprintf(stderr, "Puertos no validos: %s\n", optarg); return 1; }
                 break;
             case 'v': verbose = 1; break;
+            case 'F':
+                if      (!strcmp(optarg, "bpf"))    filtro_bpf = 1;
+                else if (!strcmp(optarg, "codigo")) filtro_bpf = 0;
+                else { fprintf(stderr, "-F: usa bpf o codigo\n"); return 1; }
+                break;
             default:  uso(argv[0]); return 1;
         }
     }
@@ -1926,26 +2027,25 @@ int main(int argc, char **argv)
         /* En vivo, que cada conexion salga en cuanto se clasifica */
         setvbuf(salida, NULL, _IOLBF, 0);
 
-        /* Filtro BPF en el nucleo: solo llegan a la sonda los segmentos
-         * del puerto, en lugar de todo el trafico de la interfaz.         */
-        char lista[2048] = "", filtro[4400];
+    }
+
+    /* BLOQUE 7: filtro BPF (en vivo, en el nucleo: solo llegan a la sonda
+     * los segmentos de los puertos pedidos, en lugar de todo el trafico). */
+    if (filtro_bpf < 0) filtro_bpf = interfaz != NULL;
+    if (filtro_bpf) {
         struct bpf_program bpf;
-        int n = 0;
-        for (uint32_t p = 1; p < 65536 && !todos_puertos; p++) {
-            if (!puerto_activo((uint16_t)p)) continue;
-            if (++n > 200) break;          /* rango muy grande: sin filtro de puerto */
-            size_t l = strlen(lista);
-            snprintf(lista + l, sizeof lista - l, "%sport %u", l ? " or " : "", p);
+        construir_filtro(texto_filtro, sizeof texto_filtro);
+        if (pcap_compile(descr, &bpf, texto_filtro, 1, PCAP_NETMASK_UNKNOWN) != 0 ||
+            pcap_setfilter(descr, &bpf) != 0) {
+            fprintf(stderr, "No se pudo aplicar el filtro BPF \"%s\": %s\n",
+                    texto_filtro, pcap_geterr(descr));
+            pcap_close(descr);
+            return 1;
         }
-        if (todos_puertos || n > 200)
-            snprintf(filtro, sizeof filtro, "tcp or (vlan and tcp)");
-        else
-            snprintf(filtro, sizeof filtro, "(tcp and (%s)) or (vlan and tcp and (%s))", lista, lista);
-        if (pcap_compile(descr, &bpf, filtro, 1, PCAP_NETMASK_UNKNOWN) == 0) {
-            if (pcap_setfilter(descr, &bpf) != 0)
-                fprintf(stderr, "Aviso: no se pudo aplicar el filtro: %s\n", pcap_geterr(descr));
-            pcap_freecode(&bpf);
-        }
+        pcap_freecode(&bpf);
+        fprintf(info, "Filtro de puertos: BPF \"%s\"\n", texto_filtro);
+    } else {
+        fprintf(info, "Filtro de puertos: en el codigo de la sonda\n");
     }
 
     /* Cada tipo de enlace pone una cabecera distinta delante de IP
@@ -1959,13 +2059,35 @@ int main(int argc, char **argv)
         return 1;
     }
 
+    double t0 = ahora();
+    clock_t c0 = clock();
     if (pcap_loop(descr, -1, analizar_paquete, NULL) == PCAP_ERROR) {
         fprintf(stderr, "Error en pcap_loop: %s\n", pcap_geterr(descr));
     }
 
     liberar_flujos();          /* antes del resumen: informa de lo pendiente */
+    /* BLOQUE 7: tiempo de proceso (lectura + filtro + analisis + salida
+     * de las conexiones). En vivo es el tiempo que ha estado capturando.  */
+    double seg = ahora() - t0;
+    double cpu = (double)(clock() - c0) / CLOCKS_PER_SEC;
+    struct pcap_stat ps = {0};
+    int hay_stats = interfaz && pcap_stats(descr, &ps) == 0;
     emitir_servidores();
     imprimir_resumen();
+    fprintf(info, "  Rendimiento (filtro %s)\n", filtro_bpf ? "BPF" : "en el codigo");
+    fprintf(info, "    paquetes en la sonda ....... %" PRIu64 "\n", est.total);
+    fprintf(info, "    tiempo / CPU ............... %.3f s / %.3f s\n", seg, cpu);
+    if (!interfaz && seg > 0)
+        fprintf(info, "    velocidad .................. %.0f paquetes/s\n", est.total / seg);
+    if (hay_stats)
+        fprintf(info, "    recibidos / descartados .... %u / %u  (descartados por el nucleo)\n",
+                ps.ps_recv, ps.ps_drop);
+    fprintf(info, "-------------------------------------------------------\n");
+    /* Linea para scripts (herramientas/medir_filtro.sh) */
+    fprintf(stderr, "RENDIMIENTO filtro=%s puertos=%s paquetes=%" PRIu64
+            " tiempo_s=%.6f cpu_s=%.6f recibidos=%u descartados=%u\n",
+            filtro_bpf ? "bpf" : "codigo", texto_puertos, est.total, seg, cpu,
+            hay_stats ? ps.ps_recv : 0, hay_stats ? ps.ps_drop : 0);
     liberar_servidores();
     pcap_close(descr);
     if (salida != stdout) fclose(salida);

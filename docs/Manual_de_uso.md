@@ -45,6 +45,7 @@ sudo ./sonda -i eth0 -o vivo.ndjson           # en vivo (Ctrl+C para parar)
 | `-g fichero` | Tabla de algoritmos | `grupos_pqc.csv` |
 | `-o fichero` | Escribe la salida en un fichero en lugar de en pantalla | pantalla |
 | `-t` | Salida en texto legible en lugar de JSON | JSON |
+| `-F bpf` / `-F codigo` | Dónde se filtran los puertos (ver abajo) | `bpf` con `-i`, `codigo` con `-f` |
 | `-v` | Una línea por cada segmento TCP analizado (depuración) | — |
 | `-h` | Muestra la ayuda | — |
 
@@ -70,6 +71,17 @@ Se pueden combinar: `-p tls,8080`.
 | 636 | ldaps | 994 | ircs | 8443 | https-alt |
 | 853 | dns-over-tls | 995 | pop3s | 8883 | mqtts |
 | 989 | ftps-data | 5061 | sip-tls | 9093 | kafka-tls |
+
+### Dónde se filtran los puertos (`-F`)
+
+| Valor | Qué pasa |
+|---|---|
+| `-F bpf` | Se compila un filtro BPF equivalente a `-p` (los puertos seguidos se agrupan en `portrange`). **En vivo lo ejecuta el núcleo**: los paquetes que no pasan ni se copian a la sonda. Con fichero lo ejecuta libpcap antes de entregar cada paquete |
+| `-F codigo` | Llegan todos los paquetes y la sonda descarta los de otros puertos tras leer Ethernet, IP y TCP |
+
+La salida es la misma en los dos casos. El filtro BPF deja pasar también los paquetes IPv6 con cabeceras de extensión, porque las primitivas `tcp` y `port` de libpcap no las recorren; esos los filtra el código. El filtro que se aplica aparece al arrancar (`Filtro de puertos: BPF "..."`).
+
+Para comparar los dos modos: `herramientas/medir_filtro.sh traza.pcap nombre` (fichero y en vivo con `tcpreplay`, ver el script).
 
 **No se cubren todavía los puertos con STARTTLS** (25, 587, 143, 110, 389, 21): en ellos la conexión empieza en texto plano y pasa a TLS más tarde.
 
@@ -250,7 +262,10 @@ Al terminar (o al pulsar Ctrl+C en vivo), la sonda escribe por la salida de erro
 
 - **Paquetes:** total, VLAN, truncados, IPv4/IPv6, fragmentos, longitud IP a 0 (TSO), TCP/UDP.
 - **TCP de los puertos analizados:** segmentos, con datos, que empiezan un registro TLS.
-- **Reensamblado:** flujos, cerrados por FIN/RST, desordenados, retransmisiones, registros TLS completos.
+- **Reensamblado:** flujos, cerrados por FIN/RST, expulsados por inactividad, desordenados, retransmisiones, registros TLS completos.
+- **Rendimiento:** filtro usado, paquetes que llegan a la sonda, tiempo y CPU; en vivo, paquetes recibidos y descartados por el núcleo. También en una línea `RENDIMIENTO ...` para scripts.
+
+**Memoria:** un flujo se crea solo al ver un SYN o un segmento que empieza un registro TLS, y se libera con FIN/RST o tras **120 s sin paquetes** (tiempo de la captura; se revisa cada 10 s). Así la sonda puede funcionar en vivo indefinidamente.
 - **Clasificación:** conexiones, clientes y servidores por estado, y cuántas respuestas fueron Alert o cierre.
 
 Si «TCP malformados» o «truncados» no son 0, conviene revisar la captura (snaplen corto, paquetes cortados).
